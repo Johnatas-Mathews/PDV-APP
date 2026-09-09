@@ -1,131 +1,139 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import '../styles/pages.css'
 
+// SVGs minimalistas para os cards
+const IconTrending = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" />
+  </svg>
+)
+
+const IconOrders = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" />
+  </svg>
+)
+
+const IconUsers = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+)
+
+const IconProducts = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" />
+  </svg>
+)
+
+const IconReceivables = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
+  </svg>
+)
+
 export default function Dashboard() {
-  const [dados, setDados] = useState({
+  const [metricas, setMetricas] = useState({
     totalVendas: 0,
-    quantidadeVendas: 0,
-    clientesAtivos: 0,
-    produtosAtivos: 0,
-    aReceber: 0,
+    qtdVendas: 0,
+    clientes: 0,
+    produtos: 0,
+    aReceber: 0
   })
-  const [carregando, setCarregando] = useState(true)
-
-  const carregarIndicadores = async () => {
-    setCarregando(true)
-
-    try {
-      // 1. Buscar vendas
-      const { data: vendas, error: erroVendas } = await supabase
-        .from('vendas')
-        .select('total')
-
-      // 2. Buscar clientes
-      const { count: qtdClientes, error: erroClientes } = await supabase
-        .from('clientes')
-        .select('*', { count: 'exact', head: true })
-
-      // 3. Buscar produtos
-      const { count: qtdProdutos, error: erroProdutos } = await supabase
-        .from('produtos')
-        .select('*', { count: 'exact', head: true })
-
-      // 4. Buscar contas a receber
-      const { data: contas, error: erroContas } = await supabase
-        .from('contas_a_receber')
-        .select('valor, valor_pago, status')
-
-      if (erroVendas) console.error('Erro vendas:', erroVendas)
-      if (erroClientes) console.error('Erro clientes:', erroClientes)
-      if (erroProdutos) console.error('Erro produtos:', erroProdutos)
-      if (erroContas) console.error('Erro contas:', erroContas)
-
-      // Total financeiro de vendas
-      const totalVendas = (vendas || []).reduce((sum, v) => sum + (Number(v.total) || 0), 0)
-
-      // Saldo devedor pendente em aberto (valor - valor_pago)
-      const saldoAReceber = (contas || []).reduce((sum, c) => {
-        if (c.status === 'pago') return sum
-        const total = Number(c.valor) || 0
-        const pago = Number(c.valor_pago) || 0
-        return sum + Math.max(0, total - pago)
-      }, 0)
-
-      setDados({
-        totalVendas,
-        quantidadeVendas: (vendas || []).length,
-        clientesAtivos: qtdClientes || 0,
-        produtosAtivos: qtdProdutos || 0,
-        aReceber: saldoAReceber,
-      })
-    } catch (err) {
-      console.error('Falha geral ao buscar métricas:', err)
-    } finally {
-      setCarregando(false)
-    }
-  }
 
   useEffect(() => {
-    carregarIndicadores()
+    const carregarMetricas = async () => {
+      const { data: vendas } = await supabase.from('vendas').select('total')
+      const totalVendas = vendas?.reduce((acc, v) => acc + Number(v.total || 0), 0) || 0
+      const qtdVendas = vendas?.length || 0
+
+      const { count: countClientes } = await supabase.from('clientes').select('*', { count: 'exact', head: true })
+      const { count: countProdutos } = await supabase.from('produtos').select('*', { count: 'exact', head: true })
+
+      const { data: contas } = await supabase.from('contas_a_receber').select('valor, valor_pago, status')
+      const aReceber = contas?.reduce((acc, c) => {
+        if (c.status !== 'pago') {
+          return acc + (Number(c.valor || 0) - Number(c.valor_pago || 0))
+        }
+        return acc
+      }, 0) || 0
+
+      setMetricas({
+        totalVendas,
+        qtdVendas,
+        clientes: countClientes || 0,
+        produtos: countProdutos || 0,
+        aReceber
+      })
+    }
+
+    carregarMetricas()
   }, [])
 
   return (
-    <div>
-      <h1 className="page-title">Dashboard</h1>
-      
-      {carregando ? (
-        <p>Atualizando indicadores em tempo real...</p>
-      ) : (
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <div className="metric-icon">💰</div>
-            <div className="metric-content">
-              <p className="metric-label">Total de Vendas</p>
-              <p className="metric-value">R$ {dados.totalVendas.toFixed(2)}</p>
-            </div>
-          </div>
+    <div className="dashboard-wrapper">
+      <header style={{ marginBottom: '1.5rem' }}>
+        <h1 className="page-title">Dashboard</h1>
+        <p style={{ color: '#64748b', fontSize: '14px', margin: '4px 0 0 0' }}>Visão geral do seu caixa e movimentações em tempo real</p>
+      </header>
 
-          <div className="metric-card">
-            <div className="metric-icon">🧾</div>
-            <div className="metric-content">
-              <p className="metric-label">Número de Vendas</p>
-              <p className="metric-value">{dados.quantidadeVendas}</p>
-            </div>
+      <section className="kpi-grid">
+        <div className="kpi-card">
+          <div className="kpi-header">
+            <span className="kpi-title">TOTAL DE VENDAS</span>
+            <div className="kpi-icon blue"><IconTrending /></div>
           </div>
-
-          <div className="metric-card">
-            <div className="metric-icon">👥</div>
-            <div className="metric-content">
-              <p className="metric-label">Clientes Cadastrados</p>
-              <p className="metric-value">{dados.clientesAtivos}</p>
-            </div>
-          </div>
-
-          <div className="metric-card">
-            <div className="metric-icon">📦</div>
-            <div className="metric-content">
-              <p className="metric-label">Produtos Cadastrados</p>
-              <p className="metric-value">{dados.produtosAtivos}</p>
-            </div>
-          </div>
-
-          <div className="metric-card">
-            <div className="metric-icon">📋</div>
-            <div className="metric-content">
-              <p className="metric-label">A Receber</p>
-              <p className="metric-value" style={{ color: '#ef4444' }}>
-                R$ {dados.aReceber.toFixed(2)}
-              </p>
-            </div>
+          <div className="kpi-body">
+            <span className="kpi-value">R$ {metricas.totalVendas.toFixed(2)}</span>
+            <span className="kpi-hint" style={{ color: '#16a34a', fontWeight: 600 }}>● Atualizado</span>
           </div>
         </div>
-      )}
 
-      <div className="welcome-section">
-        <h2>Bem-vindo ao PDV Sistema!</h2>
-        <p>Seus dados agora estão integrados à nuvem em tempo real.</p>
-      </div>
+        <div className="kpi-card">
+          <div className="kpi-header">
+            <span className="kpi-title">NÚMERO DE VENDAS</span>
+            <div className="kpi-icon gray"><IconOrders /></div>
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-value">{metricas.qtdVendas}</span>
+            <span className="kpi-hint">pedidos concluídos</span>
+          </div>
+        </div>
+
+        <div className="kpi-card">
+          <div className="kpi-header">
+            <span className="kpi-title">CLIENTES CADASTRADOS</span>
+            <div className="kpi-icon gray"><IconUsers /></div>
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-value">{metricas.clientes}</span>
+            <span className="kpi-hint">na base ativa</span>
+          </div>
+        </div>
+
+        <div className="kpi-card">
+          <div className="kpi-header">
+            <span className="kpi-title">PRODUTOS NO CATÁLOGO</span>
+            <div className="kpi-icon gray"><IconProducts /></div>
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-value">{metricas.produtos}</span>
+            <span className="kpi-hint">itens disponíveis</span>
+          </div>
+        </div>
+
+        <div className="kpi-card">
+          <div className="kpi-header">
+            <span className="kpi-title">SALDO A RECEBER</span>
+            <div className="kpi-icon orange"><IconReceivables /></div>
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-value" style={{ color: '#ea580c' }}>R$ {metricas.aReceber.toFixed(2)}</span>
+            <span className="kpi-hint">pendente de quitação</span>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
