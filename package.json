@@ -1,7 +1,6 @@
 {
   "name": "pdv-system",
   "version": "1.0.0",
-  "description": "Sistema PDV profissional com gestão de vendas, clientes e produtos",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +11,6 @@
     "@supabase/supabase-js": "^2.48.0",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
-    "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0"
