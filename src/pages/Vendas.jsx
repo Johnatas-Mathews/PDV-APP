@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
 import '../styles/pages.css'
 
 export default function Vendas() {
@@ -12,28 +13,64 @@ export default function Vendas() {
   const [itensVenda, setItensVenda] = useState([])
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [statusPagamento, setStatusPagamento] = useState('pago')
+  const [salvando, setSalvando] = useState(false)
+
+  // 1. Carregar produtos, clientes e histórico de vendas do Supabase
+  const carregarDados = async () => {
+    const { data: prodData } = await supabase
+      .from('produtos')
+      .select('*')
+      .order('nome')
+
+    const { data: cliData } = await supabase
+      .from('clientes')
+      .select('*')
+      .order('nome')
+
+    const { data: venData } = await supabase
+      .from('vendas')
+      .select('*, clientes(nome)')
+      .order('id', { ascending: false })
+      .limit(10)
+
+    if (prodData) setProdutos(prodData)
+    if (cliData) setClientes(cliData)
+    if (venData) setVendas(venData)
+  }
 
   useEffect(() => {
-    // Carregar dados
-    setProdutos(JSON.parse(localStorage.getItem('pdv_produtos') || '[]'))
-    setClientes(JSON.parse(localStorage.getItem('pdv_clientes') || '[]'))
-    setVendas(JSON.parse(localStorage.getItem('pdv_vendas') || '[]'))
+    carregarDados()
   }, [])
 
+  // 2. Adicionar produto à lista temporária da venda
   const adicionarItem = () => {
     if (!produtoSelecionado || !quantidade) {
-      alert('Selecione um produto e quantidade')
+      alert('Selecione um produto e a quantidade')
       return
     }
 
     const produto = produtos.find(p => p.id === parseInt(produtoSelecionado))
+    if (!produto) return
+
+    const qtd = parseInt(quantidade)
+    if (qtd <= 0) {
+      alert('Informe uma quantidade válida')
+      return
+    }
+
+    if (produto.estoque < qtd) {
+      alert(`Estoque insuficiente! Restam apenas ${produto.estoque} unidades.`)
+      return
+    }
+
     const novoItem = {
       id: Date.now(),
       produtoId: produto.id,
       nomeProduto: produto.nome,
-      preco: produto.preco,
-      quantidade: parseInt(quantidade),
-      subtotal: produto.preco * parseInt(quantidade)
+      preco: Number(produto.preco) || 0,
+      preco_custo: Number(produto.preco_custo) || 0,
+      quantidade: qtd,
+      subtotal: (Number(produto.preco) || 0) * qtd
     }
 
     setItensVenda([...itensVenda, novoItem])
@@ -47,38 +84,66 @@ export default function Vendas() {
 
   const total = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
 
-  const finalizarVenda = () => {
+  // 3. Finalizar e salvar a venda no Supabase
+  const finalizarVenda = async () => {
     if (itensVenda.length === 0) {
       alert('Adicione itens à venda')
       return
     }
 
-    const novaVenda = {
-      id: Date.now(),
-      data: new Date().toLocaleString('pt-BR'),
-      cliente: clienteSelecionado ? clientes.find(c => c.id === parseInt(clienteSelecionado))?.nome : 'Cliente Avulso',
-      itens: itensVenda,
-      total: total,
-      pagamento: formaPagamento,
-      status: statusPagamento
+    setSalvando(true)
+
+    const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
+
+    // A. Gravar a venda
+    const { data: vendaCriada, error: erroVenda } = await supabase
+      .from('vendas')
+      .insert([
+        {
+          total: total,
+          forma_pagamento: formaPagamento,
+          itens: itensVenda,
+          cliente_id: clienteId
+        }
+      ])
+      .select()
+      .single()
+
+    if (erroVenda) {
+      alert('Erro ao registrar venda: ' + erroVenda.message)
+      setSalvando(false)
+      return
     }
 
-    const novasVendas = [...vendas, novaVenda]
-    setVendas(novasVendas)
-    localStorage.setItem('pdv_vendas', JSON.stringify(novasVendas))
-
-    // Se for a prazo, registrar na conta a receber
+    // B. Se a venda for pendente/a prazo, registrar em contas_a_receber
     if (statusPagamento === 'pendente') {
-      const contas = JSON.parse(localStorage.getItem('pdv_contas') || '[]')
-      contas.push({
-        id: Date.now(),
-        vendaId: novaVenda.id,
-        cliente: novaVenda.cliente,
-        valor: total,
-        dataPrazo: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
-        pago: false
-      })
-      localStorage.setItem('pdv_contas', JSON.stringify(contas))
+      const dataVencimento = new Date()
+      dataVencimento.setDate(dataVencimento.getDate() + 30)
+
+      const clienteObj = clientes.find(c => c.id === clienteId)
+      const nomeCliente = clienteObj ? clienteObj.nome : 'Cliente Avulso'
+
+      await supabase.from('contas_a_receber').insert([
+        {
+          descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
+          valor: total,
+          vencimento: dataVencimento.toISOString().split('T')[0],
+          status: 'pendente',
+          cliente_id: clienteId
+        }
+      ])
+    }
+
+    // C. Baixar estoque dos produtos vendidos
+    for (const item of itensVenda) {
+      const prodOriginal = produtos.find(p => p.id === item.produtoId)
+      if (prodOriginal) {
+        const novoEstoque = Math.max(0, (prodOriginal.estoque || 0) - item.quantidade)
+        await supabase
+          .from('produtos')
+          .update({ estoque: novoEstoque })
+          .eq('id', item.produtoId)
+      }
     }
 
     alert('Venda registrada com sucesso!')
@@ -86,6 +151,8 @@ export default function Vendas() {
     setClienteSelecionado('')
     setFormaPagamento('dinheiro')
     setStatusPagamento('pago')
+    setSalvando(false)
+    await carregarDados()
   }
 
   return (
@@ -121,7 +188,7 @@ export default function Vendas() {
               <label>Status</label>
               <select value={statusPagamento} onChange={(e) => setStatusPagamento(e.target.value)}>
                 <option value="pago">Pago</option>
-                <option value="pendente">Pendente</option>
+                <option value="pendente">Pendente (A prazo)</option>
               </select>
             </div>
           </div>
@@ -137,7 +204,7 @@ export default function Vendas() {
                 <option value="">Selecione um produto</option>
                 {produtos.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.nome} - R$ {p.preco.toFixed(2)}
+                    {p.nome} - R$ {Number(p.preco).toFixed(2)} (Estoque: {p.estoque})
                   </option>
                 ))}
               </select>
@@ -195,8 +262,12 @@ export default function Vendas() {
               <span>Total:</span>
               <span className="total-value">R$ {total.toFixed(2)}</span>
             </div>
-            <button className="btn btn-success btn-lg" onClick={finalizarVenda}>
-              Finalizar Venda
+            <button 
+              className="btn btn-success btn-lg" 
+              onClick={finalizarVenda}
+              disabled={salvando}
+            >
+              {salvando ? 'Processando...' : 'Finalizar Venda'}
             </button>
           </div>
         </div>
@@ -212,21 +283,15 @@ export default function Vendas() {
                 <th>Cliente</th>
                 <th>Total</th>
                 <th>Pagamento</th>
-                <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {vendas.slice().reverse().slice(0, 5).map(venda => (
+              {vendas.map(venda => (
                 <tr key={venda.id}>
-                  <td>{venda.data}</td>
-                  <td>{venda.cliente}</td>
-                  <td>R$ {venda.total.toFixed(2)}</td>
-                  <td>{venda.pagamento}</td>
-                  <td>
-                    <span className={`badge badge-${venda.status === 'pago' ? 'success' : 'warning'}`}>
-                      {venda.status}
-                    </span>
-                  </td>
+                  <td>{new Date(venda.created_at).toLocaleString('pt-BR')}</td>
+                  <td>{venda.clientes?.nome || 'Cliente Avulso'}</td>
+                  <td>R$ {Number(venda.total).toFixed(2)}</td>
+                  <td>{venda.forma_pagamento?.toUpperCase()}</td>
                 </tr>
               ))}
             </tbody>
