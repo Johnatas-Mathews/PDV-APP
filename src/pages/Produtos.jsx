@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
 import '../styles/pages.css'
 
 export default function Produtos() {
@@ -9,42 +10,68 @@ export default function Produtos() {
   const [descricao, setDescricao] = useState('')
   const [estoque, setEstoque] = useState('')
   const [editando, setEditando] = useState(null)
+  const [carregando, setCarregando] = useState(false)
+
+  // 1. Carregar produtos do Supabase
+  const carregarProdutos = async () => {
+    const { data, error } = await supabase
+      .from('produtos')
+      .select('*')
+      .order('id', { ascending: false })
+
+    if (error) {
+      console.error('Erro ao buscar produtos:', error)
+    } else {
+      setProdutos(data || [])
+    }
+  }
 
   useEffect(() => {
-    const dados = JSON.parse(localStorage.getItem('pdv_produtos') || '[]')
-    setProdutos(dados)
+    carregarProdutos()
   }, [])
 
-  const salvarProduto = () => {
+  // 2. Salvar ou Atualizar no Supabase
+  const salvarProduto = async () => {
     if (!nome || !preco) {
       alert('Preencha nome e preço')
       return
     }
 
-    let novaLista
-    if (editando) {
-      novaLista = produtos.map(p => 
-        p.id === editando 
-          ? { ...p, nome, preco: parseFloat(preco), categoria, descricao, estoque: parseInt(estoque) || 0 }
-          : p
-      )
-      setEditando(null)
-    } else {
-      const novoProduto = {
-        id: Date.now(),
-        nome,
-        preco: parseFloat(preco),
-        categoria,
-        descricao,
-        estoque: parseInt(estoque) || 0,
-        dataCadastro: new Date().toLocaleDateString('pt-BR')
-      }
-      novaLista = [...produtos, novoProduto]
+    setCarregando(true)
+
+    const payload = {
+      nome,
+      preco: parseFloat(preco),
+      categoria: categoria || null,
+      estoque: parseInt(estoque) || 0
     }
 
-    setProdutos(novaLista)
-    localStorage.setItem('pdv_produtos', JSON.stringify(novaLista))
-    limparForm()
+    if (editando) {
+      const { error } = await supabase
+        .from('produtos')
+        .update(payload)
+        .eq('id', editando)
+
+      if (error) {
+        alert('Erro ao atualizar produto: ' + error.message)
+      } else {
+        await carregarProdutos()
+        limparForm()
+      }
+    } else {
+      const { error } = await supabase
+        .from('produtos')
+        .insert([payload])
+
+      if (error) {
+        alert('Erro ao cadastrar produto: ' + error.message)
+      } else {
+        await carregarProdutos()
+        limparForm()
+      }
+    }
+
+    setCarregando(false)
   }
 
   const limparForm = () => {
@@ -59,17 +86,25 @@ export default function Produtos() {
   const editar = (produto) => {
     setNome(produto.nome)
     setPreco(produto.preco.toString())
-    setCategoria(produto.categoria)
-    setDescricao(produto.descricao)
-    setEstoque(produto.estoque.toString())
+    setCategoria(produto.categoria || '')
+    setDescricao(produto.descricao || '')
+    setEstoque((produto.estoque || 0).toString())
     setEditando(produto.id)
   }
 
-  const deletar = (id) => {
+  // 3. Deletar do Supabase
+  const deletar = async (id) => {
     if (confirm('Tem certeza que deseja deletar este produto?')) {
-      const novaLista = produtos.filter(p => p.id !== id)
-      setProdutos(novaLista)
-      localStorage.setItem('pdv_produtos', JSON.stringify(novaLista))
+      const { error } = await supabase
+        .from('produtos')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        alert('Erro ao deletar produto: ' + error.message)
+      } else {
+        await carregarProdutos()
+      }
     }
   }
 
@@ -87,7 +122,7 @@ export default function Produtos() {
               <input 
                 type="text" 
                 value={nome} 
-                onChange={(e) => setNome(e.target.value)}
+                onChange={(e) => setNome(e.target.value)} 
                 placeholder="Ex: Café Premium"
               />
             </div>
@@ -96,9 +131,9 @@ export default function Produtos() {
               <label>Preço (R$) *</label>
               <input 
                 type="number" 
-                step="0.01"
+                step="0.01" 
                 value={preco} 
-                onChange={(e) => setPreco(e.target.value)}
+                onChange={(e) => setPreco(e.target.value)} 
                 placeholder="0.00"
               />
             </div>
@@ -110,7 +145,7 @@ export default function Produtos() {
               <input 
                 type="text" 
                 value={categoria} 
-                onChange={(e) => setCategoria(e.target.value)}
+                onChange={(e) => setCategoria(e.target.value)} 
                 placeholder="Ex: Bebidas"
               />
             </div>
@@ -120,7 +155,7 @@ export default function Produtos() {
               <input 
                 type="number" 
                 value={estoque} 
-                onChange={(e) => setEstoque(e.target.value)}
+                onChange={(e) => setEstoque(e.target.value)} 
                 placeholder="0"
               />
             </div>
@@ -130,15 +165,15 @@ export default function Produtos() {
             <label>Descrição</label>
             <textarea 
               value={descricao} 
-              onChange={(e) => setDescricao(e.target.value)}
-              placeholder="Descrição do produto (opcional)"
+              onChange={(e) => setDescricao(e.target.value)} 
+              placeholder="Descrição do produto (opcional)" 
               rows="3"
             />
           </div>
 
           <div className="form-buttons">
-            <button className="btn btn-primary" onClick={salvarProduto}>
-              {editando ? 'Atualizar' : 'Adicionar'} Produto
+            <button className="btn btn-primary" onClick={salvarProduto} disabled={carregando}>
+              {carregando ? 'Salvando...' : editando ? 'Atualizar Produto' : 'Adicionar Produto'}
             </button>
             {editando && (
               <button className="btn btn-secondary" onClick={limparForm}>
@@ -168,13 +203,13 @@ export default function Produtos() {
                 <tr key={produto.id}>
                   <td>{produto.nome}</td>
                   <td>{produto.categoria || '-'}</td>
-                  <td>R$ {produto.preco.toFixed(2)}</td>
+                  <td>R$ {Number(produto.preco).toFixed(2)}</td>
                   <td>
                     <span className={`badge badge-${produto.estoque > 5 ? 'success' : produto.estoque > 0 ? 'warning' : 'danger'}`}>
                       {produto.estoque} un.
                     </span>
                   </td>
-                  <td>{produto.dataCadastro}</td>
+                  <td>{new Date(produto.created_at).toLocaleDateString('pt-BR')}</td>
                   <td>
                     <div className="action-buttons">
                       <button className="btn btn-sm btn-primary" onClick={() => editar(produto)}>
