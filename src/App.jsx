@@ -5,8 +5,8 @@ import Clientes from './pages/Clientes'
 import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
-import './styles/App.css'
-import './styles/pages.css'
+import './App.css'
+
 
 // Ícones SVG minimalistas embutidos (sem bibliotecas externas)
 const IconDashboard = () => (
