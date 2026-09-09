@@ -1,21 +1,56 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
-import { 
-  Store, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  FileText, 
-  MessageCircle, 
-  Edit3, 
-  Check, 
-  X, 
-  ShoppingCart, 
-  User, 
-  CreditCard 
-} from 'lucide-react'
 import '../styles/pages.css'
+
+// Ícones SVG minimalistas nativos (sem biblioteca externa)
+const IconStore = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
+  </svg>
+)
+
+const IconPlus = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14" /><path d="M12 5v14" />
+  </svg>
+)
+
+const IconMinus = ({ size = 14, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14" />
+  </svg>
+)
+
+const IconTrash = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+  </svg>
+)
+
+const IconFileText = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" />
+  </svg>
+)
+
+const IconWhatsApp = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+  </svg>
+)
+
+const IconEdit = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+  </svg>
+)
+
+const IconCheck = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+)
 
 export default function Vendas() {
   const [produtos, setProdutos] = useState([])
@@ -361,7 +396,7 @@ export default function Vendas() {
           {vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}
         </h1>
         <p style={{ color: '#64748b', fontSize: '13px', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Store size={16} color="#2563eb" /> {DADOS_EMPRESA.nome}
+          <IconStore /> {DADOS_EMPRESA.nome}
         </p>
       </div>
 
@@ -378,24 +413,21 @@ export default function Vendas() {
           alignItems: 'center',
           boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
         }}>
-          <span style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Edit3 size={16} /> <strong>Modo de Edição:</strong> Modifique os itens ou valores. O estoque será rebalanceado.
+          <span style={{ fontSize: '14px' }}>
+            ⚠️ <strong>Modo de Edição:</strong> Modifique os itens ou valores. O estoque será recalculado.
           </span>
           <button 
             className="btn btn-sm btn-secondary" 
             onClick={cancelarEdicao}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            <X size={14} /> Cancelar
+            ✕ Cancelar
           </button>
         </div>
       )}
 
       <div className="form-container">
         <div className="form-section">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <User size={18} color="#2563eb" /> Dados da Venda
-          </h2>
+          <h2>Dados da Venda</h2>
           
           <div className="form-group">
             <label>Cliente</label>
@@ -411,9 +443,7 @@ export default function Vendas() {
 
           <div className="form-row">
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <CreditCard size={14} /> Forma de Pagamento
-              </label>
+              <label>Forma de Pagamento</label>
               <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
                 <option value="dinheiro">Dinheiro</option>
                 <option value="pix">PIX</option>
@@ -435,9 +465,7 @@ export default function Vendas() {
         </div>
 
         <div className="form-section">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShoppingCart size={18} color="#2563eb" /> Adicionar Item
-          </h2>
+          <h2>Adicionar Item</h2>
           
           <div className="form-row">
             <div className="form-group" style={{ flex: 3 }}>
@@ -464,7 +492,7 @@ export default function Vendas() {
           </div>
 
           <button className="btn btn-primary" onClick={adicionarItem} style={{ gap: '6px' }}>
-            <Plus size={16} /> Adicionar ao Pedido
+            <IconPlus /> Adicionar ao Pedido
           </button>
         </div>
       </div>
@@ -493,21 +521,21 @@ export default function Vendas() {
                         style={{ border: 'none', background: '#ffffff', borderRadius: '4px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
                         onClick={() => alterarQtdItem(item.id, -1)}
                       >
-                        <Minus size={14} color="#475569" />
+                        <IconMinus />
                       </button>
                       <span style={{ fontWeight: 600, minWidth: '18px' }}>{item.quantidade}</span>
                       <button 
                         style={{ border: 'none', background: '#ffffff', borderRadius: '4px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
                         onClick={() => alterarQtdItem(item.id, 1)}
                       >
-                        <Plus size={14} color="#475569" />
+                        <IconPlus size={14} color="#475569" />
                       </button>
                     </div>
                   </td>
                   <td>R$ {item.subtotal.toFixed(2)}</td>
                   <td style={{ textAlign: 'center' }}>
                     <button className="btn btn-sm btn-danger" onClick={() => removerItem(item.id)} style={{ gap: '4px' }}>
-                      <Trash2 size={14} /> Remover
+                      <IconTrash /> Remover
                     </button>
                   </td>
                 </tr>
@@ -568,7 +596,7 @@ export default function Vendas() {
               >
                 {salvando ? 'Gravando...' : (
                   <>
-                    <Check size={18} />
+                    <IconCheck />
                     {vendaEditando ? 'Salvar Alterações' : 'Finalizar Venda'}
                   </>
                 )}
@@ -613,7 +641,7 @@ export default function Vendas() {
                           title="Editar venda"
                           style={{ gap: '4px' }}
                         >
-                          <Edit3 size={14} /> Editar
+                          <IconEdit /> Editar
                         </button>
                         <button 
                           className="btn btn-sm btn-primary" 
@@ -621,7 +649,7 @@ export default function Vendas() {
                           title="Comprovante PDF"
                           style={{ gap: '4px' }}
                         >
-                          <FileText size={14} /> PDF
+                          <IconFileText /> PDF
                         </button>
                         {tel && (
                           <button 
@@ -630,7 +658,7 @@ export default function Vendas() {
                             title="Enviar WhatsApp"
                             style={{ gap: '4px' }}
                           >
-                            <MessageCircle size={14} /> Zap
+                            <IconWhatsApp /> Zap
                           </button>
                         )}
                       </div>
