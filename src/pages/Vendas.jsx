@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { gerarComprovanteVenda, formatarIdVenda } from '../utils/pdfGenerator'
+import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 import '../styles/pages.css'
 
 export default function Vendas() {
@@ -15,7 +15,7 @@ export default function Vendas() {
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [statusPagamento, setStatusPagamento] = useState('pago')
   
-  // Melhorias práticas: Desconto e Troco
+  // Desconto e Troco
   const [desconto, setDesconto] = useState(0)
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -63,7 +63,6 @@ export default function Vendas() {
       return
     }
 
-    // Verifica se o item já está no carrinho para somar a quantidade
     const itemExistente = itensVenda.find(i => i.produtoId === produto.id)
     const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
 
@@ -173,7 +172,7 @@ export default function Vendas() {
     const nomeCliente = clienteObj ? clienteObj.nome : 'Cliente Avulso'
     const telefoneCliente = clienteObj ? clienteObj.telefone : null
 
-    // A. Gravar a venda no Supabase
+    // A. Gravar a venda
     const { data: vendaCriada, error: erroVenda } = await supabase
       .from('vendas')
       .insert([
@@ -231,12 +230,12 @@ export default function Vendas() {
       })
     }
 
-    // E. Opção de WhatsApp se tiver telefone
+    // E. Opção de WhatsApp
     if (telefoneCliente && confirm('Deseja enviar a confirmação da compra pelo WhatsApp do cliente?')) {
       enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto)
     }
 
-    // Limpar estados
+    // Limpar formulário
     setItensVenda([])
     setClienteSelecionado('')
     setFormaPagamento('dinheiro')
@@ -249,7 +248,12 @@ export default function Vendas() {
 
   return (
     <div>
-      <h1 className="page-title">Frente de Caixa (PDV)</h1>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h1 className="page-title" style={{ marginBottom: '2px' }}>Frente de Caixa (PDV)</h1>
+        <p style={{ color: '#6b7280', fontSize: '14px', margin: 0, fontWeight: 500 }}>
+          🏪 {DADOS_EMPRESA.nome}
+        </p>
+      </div>
 
       <div className="form-container">
         <div className="form-section">
