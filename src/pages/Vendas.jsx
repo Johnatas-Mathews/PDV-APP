@@ -20,6 +20,10 @@ export default function Vendas() {
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
+  // Controle de Edição de Venda Existente
+  const [vendaEditando, setVendaEditando] = useState(null)
+  const [itensOriginais, setItensOriginais] = useState([])
+
   // 1. Carregar dados do Supabase
   const carregarDados = async () => {
     const { data: prodData } = await supabase
@@ -66,8 +70,12 @@ export default function Vendas() {
     const itemExistente = itensVenda.find(i => i.produtoId === produto.id)
     const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
 
-    if (produto.estoque < qtdTotalPretendida) {
-      alert(`Estoque insuficiente! Restam apenas ${produto.estoque} unidades em estoque.`)
+    // Se estiver editando, considera o que já pertencia a essa venda original
+    const itemOriginal = itensOriginais.find(i => i.produtoId === produto.id)
+    const estoqueDisponivelReal = produto.estoque + (itemOriginal ? itemOriginal.quantidade : 0)
+
+    if (estoqueDisponivelReal < qtdTotalPretendida) {
+      alert(`Estoque insuficiente! Disponível no estoque: ${estoqueDisponivelReal} unidades.`)
       return
     }
 
@@ -106,8 +114,12 @@ export default function Vendas() {
         const novaQtd = item.quantidade + delta
 
         if (novaQtd <= 0) return null
-        if (delta > 0 && produto && novaQtd > produto.estoque) {
-          alert(`Estoque máximo atingido (${produto.estoque} un)!`)
+
+        const itemOriginal = itensOriginais.find(i => i.produtoId === item.produtoId)
+        const estoqueDisponivelReal = (produto ? produto.estoque : 0) + (itemOriginal ? itemOriginal.quantidade : 0)
+
+        if (delta > 0 && novaQtd > estoqueDisponivelReal) {
+          alert(`Estoque máximo disponível atingido (${estoqueDisponivelReal} un)!`)
           return item
         }
 
@@ -133,7 +145,36 @@ export default function Vendas() {
     ? numValorRecebido - totalComDesconto 
     : 0
 
-  // 4. Compartilhar comprovante no WhatsApp
+  // 4. Iniciar Edição de uma Venda
+  const iniciarEdicao = (venda) => {
+    setVendaEditando(venda)
+    setClienteSelecionado(venda.cliente_id ? String(venda.cliente_id) : '')
+    setFormaPagamento(venda.forma_pagamento || 'dinheiro')
+    
+    const itensClonados = Array.isArray(venda.itens) ? JSON.parse(JSON.stringify(venda.itens)) : []
+    setItensVenda(itensClonados)
+    setItensOriginais(itensClonados)
+    
+    // Calcula eventual desconto original
+    const somaItens = itensClonados.reduce((s, i) => s + (Number(i.subtotal) || 0), 0)
+    const descOriginal = Math.max(0, somaItens - Number(venda.total || 0))
+    setDesconto(descOriginal)
+
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const cancelarEdicao = () => {
+    setVendaEditando(null)
+    setItensOriginais([])
+    setItensVenda([])
+    setClienteSelecionado('')
+    setFormaPagamento('dinheiro')
+    setStatusPagamento('pago')
+    setDesconto(0)
+    setValorRecebido('')
+  }
+
+  // 5. Enviar Comprovante no WhatsApp
   const enviarComprovanteWhatsApp = (codigoVenda, nomeCli, telCli, totalVenda) => {
     if (!telCli) {
       alert('Este cliente não possui telefone cadastrado!')
@@ -154,7 +195,7 @@ export default function Vendas() {
     window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
   }
 
-  // 5. Finalizar Venda
+  // 6. Salvar Venda (Nova ou Atualização)
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) {
       alert('Adicione itens à venda')
@@ -172,76 +213,148 @@ export default function Vendas() {
     const nomeCliente = clienteObj ? clienteObj.nome : 'Cliente Avulso'
     const telefoneCliente = clienteObj ? clienteObj.telefone : null
 
-    // A. Gravar a venda
-    const { data: vendaCriada, error: erroVenda } = await supabase
-      .from('vendas')
-      .insert([
-        {
-          total: totalComDesconto,
-          forma_pagamento: formaPagamento,
-          itens: itensVenda,
-          cliente_id: clienteId
+    try {
+      if (vendaEditando) {
+        // === MODO EDIÇÃO ===
+        
+        // 1. Rebalancear estoque: compara itensOriginais com novos itensVenda
+        const mapaOriginal = {}
+        itensOriginais.forEach(i => {
+          mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade
+        })
+
+        const mapaNovo = {}
+        itensVenda.forEach(i => {
+          mapaNovo[i.produtoId] = (mapaNovo[i.produtoId] || 0) + i.quantidade
+        })
+
+        // Lista com todos os IDs de produto envolvidos na alteração
+        const todosProdutoIds = Array.from(new Set([...Object.keys(mapaOriginal), ...Object.keys(mapaNovo)]))
+
+        for (const prodIdStr of todosProdutoIds) {
+          const prodId = parseInt(prodIdStr)
+          const qtdAntiga = mapaOriginal[prodId] || 0
+          const qtdNova = mapaNovo[prodId] || 0
+          const diferenca = qtdNova - qtdAntiga // positivo = saiu mais do estoque; negativo = devolve pro estoque
+
+          if (diferenca !== 0) {
+            const prodAtual = produtos.find(p => p.id === prodId)
+            if (prodAtual) {
+              const novoEstoque = Math.max(0, (prodAtual.estoque || 0) - diferenca)
+              await supabase
+                .from('produtos')
+                .update({ estoque: novoEstoque })
+                .eq('id', prodId)
+            }
+          }
         }
-      ])
-      .select()
-      .single()
 
-    if (erroVenda) {
-      alert('Erro ao registrar venda: ' + erroVenda.message)
-      setSalvando(false)
-      return
-    }
+        // 2. Atualizar registro da venda
+        const { error: erroUpdate } = await supabase
+          .from('vendas')
+          .update({
+            total: totalComDesconto,
+            forma_pagamento: formaPagamento,
+            itens: itensVenda,
+            cliente_id: clienteId
+          })
+          .eq('id', vendaEditando.id)
 
-    // B. Se a prazo, lança no contas a receber
-    if (statusPagamento === 'pendente') {
-      const dataVencimento = new Date()
-      dataVencimento.setDate(dataVencimento.getDate() + 30)
+        if (erroUpdate) throw erroUpdate
 
-      await supabase.from('contas_a_receber').insert([
-        {
-          descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
-          valor: totalComDesconto,
-          vencimento: dataVencimento.toISOString().split('T')[0],
-          status: 'pendente',
-          cliente_id: clienteId
-        }
-      ])
-    }
-
-    // C. Baixa de estoque
-    for (const item of itensVenda) {
-      const prodOriginal = produtos.find(p => p.id === item.produtoId)
-      if (prodOriginal) {
-        const novoEstoque = Math.max(0, (prodOriginal.estoque || 0) - item.quantidade)
+        // 3. Atualizar contas a receber se houver título vinculado
         await supabase
-          .from('produtos')
-          .update({ estoque: novoEstoque })
-          .eq('id', item.produtoId)
+          .from('contas_a_receber')
+          .update({
+            valor: totalComDesconto,
+            cliente_id: clienteId,
+            descricao: `Venda #${vendaEditando.id} - ${nomeCliente}`
+          })
+          .like('descricao', `Venda #${vendaEditando.id}%`)
+
+        const codFormatado = formatarIdVenda(vendaEditando.id)
+        alert(`Venda ${codFormatado} atualizada com sucesso!`)
+
+        if (confirm('Deseja emitir o comprovante PDF atualizado?')) {
+          gerarComprovanteVenda({
+            ...vendaEditando,
+            total: totalComDesconto,
+            forma_pagamento: formaPagamento,
+            itens: itensVenda,
+            clientes: { nome: nomeCliente }
+          })
+        }
+
+        cancelarEdicao()
+
+      } else {
+        // === MODO NOVA VENDA ===
+        const { data: vendaCriada, error: erroVenda } = await supabase
+          .from('vendas')
+          .insert([
+            {
+              total: totalComDesconto,
+              forma_pagamento: formaPagamento,
+              itens: itensVenda,
+              cliente_id: clienteId
+            }
+          ])
+          .select()
+          .single()
+
+        if (erroVenda) throw erroVenda
+
+        if (statusPagamento === 'pendente') {
+          const dataVencimento = new Date()
+          dataVencimento.setDate(dataVencimento.getDate() + 30)
+
+          await supabase.from('contas_a_receber').insert([
+            {
+              descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
+              valor: totalComDesconto,
+              vencimento: dataVencimento.toISOString().split('T')[0],
+              status: 'pendente',
+              cliente_id: clienteId
+            }
+          ])
+        }
+
+        // Baixa regular de estoque
+        for (const item of itensVenda) {
+          const prodOriginal = produtos.find(p => p.id === item.produtoId)
+          if (prodOriginal) {
+            const novoEstoque = Math.max(0, (prodOriginal.estoque || 0) - item.quantidade)
+            await supabase
+              .from('produtos')
+              .update({ estoque: novoEstoque })
+              .eq('id', item.produtoId)
+          }
+        }
+
+        const codFormatado = formatarIdVenda(vendaCriada.id)
+
+        if (confirm(`Venda ${codFormatado} finalizada! Deseja emitir o comprovante em PDF?`)) {
+          gerarComprovanteVenda({
+            ...vendaCriada,
+            clientes: { nome: nomeCliente }
+          })
+        }
+
+        if (telefoneCliente && confirm('Deseja enviar a confirmação da compra pelo WhatsApp do cliente?')) {
+          enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto)
+        }
+
+        setItensVenda([])
+        setClienteSelecionado('')
+        setFormaPagamento('dinheiro')
+        setStatusPagamento('pago')
+        setDesconto(0)
+        setValorRecebido('')
       }
+    } catch (err) {
+      alert('Erro ao salvar venda: ' + err.message)
     }
 
-    const codFormatado = formatarIdVenda(vendaCriada.id)
-
-    // D. Opção de PDF
-    if (confirm(`Venda ${codFormatado} finalizada! Deseja emitir o comprovante em PDF?`)) {
-      gerarComprovanteVenda({
-        ...vendaCriada,
-        clientes: { nome: nomeCliente }
-      })
-    }
-
-    // E. Opção de WhatsApp
-    if (telefoneCliente && confirm('Deseja enviar a confirmação da compra pelo WhatsApp do cliente?')) {
-      enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto)
-    }
-
-    // Limpar formulário
-    setItensVenda([])
-    setClienteSelecionado('')
-    setFormaPagamento('dinheiro')
-    setStatusPagamento('pago')
-    setDesconto(0)
-    setValorRecebido('')
     setSalvando(false)
     await carregarDados()
   }
@@ -249,11 +362,37 @@ export default function Vendas() {
   return (
     <div>
       <div style={{ marginBottom: '1.5rem' }}>
-        <h1 className="page-title" style={{ marginBottom: '2px' }}>Frente de Caixa (PDV)</h1>
+        <h1 className="page-title" style={{ marginBottom: '2px' }}>
+          {vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}
+        </h1>
         <p style={{ color: '#6b7280', fontSize: '14px', margin: 0, fontWeight: 500 }}>
           🏪 {DADOS_EMPRESA.nome}
         </p>
       </div>
+
+      {vendaEditando && (
+        <div style={{ 
+          background: '#fef3c7', 
+          border: '1px solid #f59e0b', 
+          color: '#92400e', 
+          padding: '12px 16px', 
+          borderRadius: '8px', 
+          marginBottom: '1.5rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span>
+            ⚠️ <strong>Modo de Edição Ativo:</strong> Você pode adicionar, remover ou ajustar as quantidades. O estoque será rebalanceado automaticamente.
+          </span>
+          <button 
+            className="btn btn-sm btn-secondary" 
+            onClick={cancelarEdicao}
+          >
+            ✕ Cancelar Edição
+          </button>
+        </div>
+      )}
 
       <div className="form-container">
         <div className="form-section">
@@ -282,13 +421,15 @@ export default function Vendas() {
               </select>
             </div>
 
-            <div className="form-group">
-              <label>Situação</label>
-              <select value={statusPagamento} onChange={(e) => setStatusPagamento(e.target.value)}>
-                <option value="pago">À Vista (Pago)</option>
-                <option value="pendente">A Prazo (Contas a Receber)</option>
-              </select>
-            </div>
+            {!vendaEditando && (
+              <div className="form-group">
+                <label>Situação</label>
+                <select value={statusPagamento} onChange={(e) => setStatusPagamento(e.target.value)}>
+                  <option value="pago">À Vista (Pago)</option>
+                  <option value="pendente">A Prazo (Contas a Receber)</option>
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -420,7 +561,7 @@ export default function Vendas() {
                 onClick={finalizarVenda}
                 disabled={salvando}
               >
-                {salvando ? 'Gravando...' : '✓ Finalizar Venda'}
+                {salvando ? 'Gravando...' : (vendaEditando ? '✓ Salvar Alterações da Venda' : '✓ Finalizar Venda')}
               </button>
             </div>
           </div>
@@ -457,6 +598,13 @@ export default function Vendas() {
                     <td>{venda.forma_pagamento?.toUpperCase()}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="action-buttons" style={{ justifyContent: 'center' }}>
+                        <button 
+                          className="btn btn-sm btn-secondary" 
+                          onClick={() => iniciarEdicao(venda)}
+                          title="Editar itens ou forma de pagamento"
+                        >
+                          ✏️ Editar
+                        </button>
                         <button 
                           className="btn btn-sm btn-primary" 
                           onClick={() => gerarComprovanteVenda(venda)}
