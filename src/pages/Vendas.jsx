@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
-// Ícones SVG minimalistas nativos (sem dependência externa)
+// Ícones SVG minimalistas nativos
 const IconStore = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
@@ -61,6 +61,7 @@ export default function Vendas() {
   const [quantidade, setQuantidade] = useState('1')
   const [itensVenda, setItensVenda] = useState([])
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
+  const [valorEntrada, setValorEntrada] = useState('')
   
   const [desconto, setDesconto] = useState(0)
   const [valorRecebido, setValorRecebido] = useState('')
@@ -180,10 +181,16 @@ export default function Vendas() {
 
   const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
   const totalComDesconto = Math.max(0, subtotal - (parseFloat(desconto) || 0))
+  
+  // Cálculos de Dinheiro e Troco
   const numValorRecebido = parseFloat(valorRecebido) || 0
   const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto 
     ? numValorRecebido - totalComDesconto 
     : 0
+
+  // Cálculos de Crediário com Entrada
+  const numValorEntrada = parseFloat(valorEntrada) || 0
+  const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
   const iniciarEdicao = (venda) => {
     setVendaEditando(venda)
@@ -207,6 +214,7 @@ export default function Vendas() {
     setItensVenda([])
     setClienteSelecionado('')
     setFormaPagamento('dinheiro')
+    setValorEntrada('')
     setDesconto(0)
     setValorRecebido('')
   }
@@ -237,9 +245,13 @@ export default function Vendas() {
       return
     }
 
-    // Validação mandatória: crediário precisa de cliente identificado
     if (formaPagamento === 'crediario' && !clienteSelecionado) {
       alert('Atenção: Para registrar venda no Crediário / A Prazo, selecione um cliente cadastrado.')
+      return
+    }
+
+    if (formaPagamento === 'crediario' && numValorEntrada > totalComDesconto) {
+      alert('O valor de entrada não pode ser maior do que o total da venda!')
       return
     }
 
@@ -256,7 +268,7 @@ export default function Vendas() {
 
     try {
       if (vendaEditando) {
-        // 1. Rebalanceamento de Estoque na Edição
+        // Rebalanceamento de Estoque
         const mapaOriginal = {}
         itensOriginais.forEach(i => {
           mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade
@@ -287,7 +299,6 @@ export default function Vendas() {
           }
         }
 
-        // 2. Atualiza a venda
         const { error: erroUpdate } = await supabase
           .from('vendas')
           .update({
@@ -300,7 +311,6 @@ export default function Vendas() {
 
         if (erroUpdate) throw erroUpdate
 
-        // 3. Atualiza ou cria título no Contas a Receber se mudou para crediário
         if (formaPagamento === 'crediario') {
           const dataVencimento = new Date()
           dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -316,7 +326,9 @@ export default function Vendas() {
               .from('contas_a_receber')
               .update({
                 valor: totalComDesconto,
+                valor_pago: numValorEntrada,
                 cliente_id: clienteId,
+                status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
                 descricao: `Venda #${vendaEditando.id} - ${nomeCliente}`
               })
               .eq('id', contaExistente.id)
@@ -325,8 +337,9 @@ export default function Vendas() {
               {
                 descricao: `Venda #${vendaEditando.id} - ${nomeCliente}`,
                 valor: totalComDesconto,
+                valor_pago: numValorEntrada,
                 vencimento: dataVencimento.toISOString().split('T')[0],
-                status: 'pendente',
+                status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
                 cliente_id: clienteId
               }
             ])
@@ -349,7 +362,7 @@ export default function Vendas() {
         cancelarEdicao()
 
       } else {
-        // Criação de Nova Venda
+        // Nova Venda
         const { data: vendaCriada, error: erroVenda } = await supabase
           .from('vendas')
           .insert([
@@ -365,7 +378,7 @@ export default function Vendas() {
 
         if (erroVenda) throw erroVenda
 
-        // Se a forma escolhida for Crediário, lança no Contas a Receber
+        // Crediário com abatimento de entrada
         if (formaPagamento === 'crediario') {
           const dataVencimento = new Date()
           dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -374,8 +387,9 @@ export default function Vendas() {
             {
               descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
               valor: totalComDesconto,
+              valor_pago: numValorEntrada,
               vencimento: dataVencimento.toISOString().split('T')[0],
-              status: 'pendente',
+              status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
               cliente_id: clienteId
             }
           ])
@@ -409,6 +423,7 @@ export default function Vendas() {
         setItensVenda([])
         setClienteSelecionado('')
         setFormaPagamento('dinheiro')
+        setValorEntrada('')
         setDesconto(0)
         setValorRecebido('')
       }
@@ -426,7 +441,7 @@ export default function Vendas() {
         .vendas-wrapper { max-width: 1200px; margin: 0 auto; }
         .page-header { margin-bottom: 1.5rem; }
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
-        .page-subtitle { color: #64748b; font-size: 13px; margin: 4px 0 0 0; font-weight: 500; display: flex; alignItems: center; gap: 6px; }
+        .page-subtitle { color: #64748b; font-size: 13px; margin: 4px 0 0 0; font-weight: 500; display: flex; align-items: center; gap: 6px; }
         .form-container, .table-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
         .form-section h2, .table-container h2 { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
         .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
@@ -485,7 +500,7 @@ export default function Vendas() {
           boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
         }}>
           <span style={{ fontSize: '14px' }}>
-            ⚠️ <strong>Modo de Edição Ativo:</strong> Modifique itens, quantidades ou a forma de pagamento. O estoque será ajustado automaticamente.
+            ⚠️ <strong>Modo de Edição Ativo:</strong> Modifique itens, quantidades ou pagamento. O estoque será rebalanceado.
           </span>
           <button className="btn btn-sm btn-secondary" onClick={cancelarEdicao}>
             ✕ Cancelar
@@ -520,6 +535,21 @@ export default function Vendas() {
                 <option value="crediario">Crediário (A Prazo / Fiado)</option>
               </select>
             </div>
+
+            {formaPagamento === 'crediario' && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Entrada / Pago Agora (R$)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  min="0"
+                  max={totalComDesconto}
+                  placeholder="0,00" 
+                  value={valorEntrada} 
+                  onChange={(e) => setValorEntrada(e.target.value)} 
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -643,8 +673,8 @@ export default function Vendas() {
 
               {formaPagamento === 'crediario' && (
                 <div style={{ background: '#fffbeb', padding: '8px 16px', borderRadius: '10px', border: '1px solid #f59e0b' }}>
-                  <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 600 }}>VENDA NO CREDIÁRIO:</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#92400e' }}>Será gerado título a receber (30 dias)</strong>
+                  <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 600 }}>RESTANTE A COBRAR:</span>
+                  <strong style={{ fontSize: '1.2rem', color: '#92400e' }}>R$ {saldoRestanteCrediario.toFixed(2)}</strong>
                 </div>
               )}
             </div>
