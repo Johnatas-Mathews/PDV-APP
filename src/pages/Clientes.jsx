@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
 import '../styles/pages.css'
 
 export default function Clientes() {
@@ -9,42 +10,69 @@ export default function Clientes() {
   const [endereco, setEndereco] = useState('')
   const [cpf, setCpf] = useState('')
   const [editando, setEditando] = useState(null)
+  const [carregando, setCarregando] = useState(false)
+
+  // 1. Carregar clientes do Supabase
+  const carregarClientes = async () => {
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('*')
+      .order('id', { ascending: false })
+
+    if (error) {
+      console.error('Erro ao buscar clientes:', error)
+    } else {
+      setClientes(data || [])
+    }
+  }
 
   useEffect(() => {
-    const dados = JSON.parse(localStorage.getItem('pdv_clientes') || '[]')
-    setClientes(dados)
+    carregarClientes()
   }, [])
 
-  const salvarCliente = () => {
-    if (!nome) {
+  // 2. Salvar ou Atualizar no Supabase
+  const salvarCliente = async () => {
+    if (!nome.trim()) {
       alert('Preencha o nome')
       return
     }
 
-    let novaLista
-    if (editando) {
-      novaLista = clientes.map(c => 
-        c.id === editando 
-          ? { ...c, nome, email, telefone, endereco, cpf }
-          : c
-      )
-      setEditando(null)
-    } else {
-      const novoCliente = {
-        id: Date.now(),
-        nome,
-        email,
-        telefone,
-        endereco,
-        cpf,
-        dataCadastro: new Date().toLocaleDateString('pt-BR')
-      }
-      novaLista = [...clientes, novoCliente]
+    setCarregando(true)
+
+    const payload = {
+      nome: nome.trim(),
+      email: email.trim() || null,
+      telefone: telefone.trim() || null,
+      endereco: endereco.trim() || null,
+      cpf: cpf.trim() || null
     }
 
-    setClientes(novaLista)
-    localStorage.setItem('pdv_clientes', JSON.stringify(novaLista))
-    limparForm()
+    if (editando) {
+      const { error } = await supabase
+        .from('clientes')
+        .update(payload)
+        .eq('id', editando)
+
+      if (error) {
+        alert('Erro ao atualizar cliente: ' + error.message)
+      } else {
+        await carregarClientes()
+        limparForm()
+      }
+    } else {
+      const { error } = await supabase
+        .from('clientes')
+        .insert([payload])
+
+      if (error) {
+        alert('Erro ao cadastrar cliente: ' + error.message)
+      } else {
+        await carregarClientes()
+        limparForm()
+      }
+    }
+
+    setCarregando(false)
   }
 
   const limparForm = () => {
@@ -57,19 +85,27 @@ export default function Clientes() {
   }
 
   const editar = (cliente) => {
-    setNome(cliente.nome)
-    setEmail(cliente.email)
-    setTelefone(cliente.telefone)
-    setEndereco(cliente.endereco)
-    setCpf(cliente.cpf)
+    setNome(cliente.nome || '')
+    setEmail(cliente.email || '')
+    setTelefone(cliente.telefone || '')
+    setEndereco(cliente.endereco || '')
+    setCpf(cliente.cpf || '')
     setEditando(cliente.id)
   }
 
-  const deletar = (id) => {
+  // 3. Deletar do Supabase
+  const deletar = async (id) => {
     if (confirm('Tem certeza que deseja deletar este cliente?')) {
-      const novaLista = clientes.filter(c => c.id !== id)
-      setClientes(novaLista)
-      localStorage.setItem('pdv_clientes', JSON.stringify(novaLista))
+      const { error } = await supabase
+        .from('clientes')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        alert('Erro ao deletar cliente: ' + error.message)
+      } else {
+        await carregarClientes()
+      }
     }
   }
 
@@ -86,7 +122,7 @@ export default function Clientes() {
             <input 
               type="text" 
               value={nome} 
-              onChange={(e) => setNome(e.target.value)}
+              onChange={(e) => setNome(e.target.value)} 
               placeholder="Nome completo"
             />
           </div>
@@ -97,7 +133,7 @@ export default function Clientes() {
               <input 
                 type="email" 
                 value={email} 
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)} 
                 placeholder="email@example.com"
               />
             </div>
@@ -107,7 +143,7 @@ export default function Clientes() {
               <input 
                 type="tel" 
                 value={telefone} 
-                onChange={(e) => setTelefone(e.target.value)}
+                onChange={(e) => setTelefone(e.target.value)} 
                 placeholder="(11) 99999-9999"
               />
             </div>
@@ -119,7 +155,7 @@ export default function Clientes() {
               <input 
                 type="text" 
                 value={cpf} 
-                onChange={(e) => setCpf(e.target.value)}
+                onChange={(e) => setCpf(e.target.value)} 
                 placeholder="000.000.000-00"
               />
             </div>
@@ -129,15 +165,15 @@ export default function Clientes() {
               <input 
                 type="text" 
                 value={endereco} 
-                onChange={(e) => setEndereco(e.target.value)}
+                onChange={(e) => setEndereco(e.target.value)} 
                 placeholder="Rua, número, complemento"
               />
             </div>
           </div>
 
           <div className="form-buttons">
-            <button className="btn btn-primary" onClick={salvarCliente}>
-              {editando ? 'Atualizar' : 'Adicionar'} Cliente
+            <button className="btn btn-primary" onClick={salvarCliente} disabled={carregando}>
+              {carregando ? 'Salvando...' : editando ? 'Atualizar Cliente' : 'Adicionar Cliente'}
             </button>
             {editando && (
               <button className="btn btn-secondary" onClick={limparForm}>
@@ -169,7 +205,7 @@ export default function Clientes() {
                   <td>{cliente.email || '-'}</td>
                   <td>{cliente.telefone || '-'}</td>
                   <td>{cliente.cpf || '-'}</td>
-                  <td>{cliente.dataCadastro}</td>
+                  <td>{cliente.created_at ? new Date(cliente.created_at).toLocaleDateString('pt-BR') : '-'}</td>
                   <td>
                     <div className="action-buttons">
                       <button className="btn btn-sm btn-primary" onClick={() => editar(cliente)}>
