@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { gerarReciboPagamento, formatarIdRecibo } from '../utils/pdfGenerator'
 import '../styles/pages.css'
 
 export default function ContasReceber() {
   const [contas, setContas] = useState([])
-  const [filtro, setFiltro] = useState('pendente') // pendente, parcial, pago, todos
+  const [filtro, setFiltro] = useState('pendente')
   const [carregando, setCarregando] = useState(true)
 
-  // Estados para baixa / pagamento
   const [contaSelecionada, setContaSelecionada] = useState(null)
   const [valorBaixa, setValorBaixa] = useState('')
   const [processando, setProcessando] = useState(false)
 
-  // 1. Carregar do Supabase com relacionamento de clientes
   const carregarContas = async () => {
     setCarregando(true)
     const { data, error } = await supabase
@@ -32,7 +31,6 @@ export default function ContasReceber() {
     carregarContas()
   }, [])
 
-  // 2. Iniciar processo de recebimento
   const iniciarRecebimento = (conta) => {
     const totalOriginal = Number(conta.valor) || 0
     const jaPago = Number(conta.valor_pago) || 0
@@ -42,7 +40,6 @@ export default function ContasReceber() {
     setValorBaixa(saldoRestante.toFixed(2))
   }
 
-  // 3. Confirmar a baixa (Total ou Parcial)
   const confirmarBaixa = async () => {
     if (!contaSelecionada) return
 
@@ -79,7 +76,14 @@ export default function ContasReceber() {
     if (error) {
       alert('Erro ao registrar pagamento: ' + error.message)
     } else {
-      alert(quitado ? 'Conta quitada com sucesso!' : `Pagamento parcial de R$ ${valorInformado.toFixed(2)} registrado!`)
+      // Pergunta se deseja emitir o PDF do recibo
+      if (confirm('Pagamento gravado com sucesso! Deseja gerar o Recibo em PDF?')) {
+        gerarReciboPagamento(
+          { ...contaSelecionada, valor_pago: novoValorPago },
+          valorInformado
+        )
+      }
+
       setContaSelecionada(null)
       setValorBaixa('')
       await carregarContas()
@@ -88,7 +92,6 @@ export default function ContasReceber() {
     setProcessando(false)
   }
 
-  // 4. Deletar conta
   const deletar = async (id) => {
     if (confirm('Tem certeza que deseja deletar esta cobrança?')) {
       const { error } = await supabase
@@ -104,7 +107,6 @@ export default function ContasReceber() {
     }
   }
 
-  // Filtros
   const contasFiltradas = contas.filter(c => {
     const status = c.status || (c.pago ? 'pago' : 'pendente')
     if (filtro === 'pendente') return status === 'pendente'
@@ -113,7 +115,6 @@ export default function ContasReceber() {
     return true
   })
 
-  // Totais para os cards
   const totalPendente = contas.reduce((sum, c) => {
     const status = c.status || (c.pago ? 'pago' : 'pendente')
     if (status === 'pago') return sum
@@ -135,7 +136,6 @@ export default function ContasReceber() {
     <div>
       <h1 className="page-title">Contas a Receber</h1>
 
-      {/* Cards de Resumo Financeiro */}
       <div className="metrics-grid">
         <div className="metric-card">
           <div className="metric-icon">📋</div>
@@ -166,16 +166,15 @@ export default function ContasReceber() {
         </div>
       </div>
 
-      {/* Painel de Recebimento de Baixa (Total ou Parcial) */}
       {contaSelecionada && (
         <div className="form-container" style={{ border: '2px solid #10b981', marginBottom: '2rem' }}>
           <div className="form-section">
-            <h2>Receber Pagamento — REC-{new Date().getFullYear()}-{String(contaSelecionada.id).padStart(6, '0')}</h2>
+            <h2>Registrar Pagamento — {formatarIdRecibo(contaSelecionada.id)}</h2>
             <p style={{ margin: '8px 0', color: '#4b5563', lineHeight: '1.6' }}>
               <strong>Cliente:</strong> {contaSelecionada.clientes?.nome || contaSelecionada.descricao || 'Cliente Avulso'} <br />
               <strong>Valor Original:</strong> R$ {Number(contaSelecionada.valor).toFixed(2)} <br />
               <strong>Já Pago:</strong> R$ {Number(contaSelecionada.valor_pago || 0).toFixed(2)} <br />
-              <strong>Saldo Devedor Restante:</strong> R$ {(Number(contaSelecionada.valor) - Number(contaSelecionada.valor_pago || 0)).toFixed(2)}
+              <strong>Saldo Restante:</strong> R$ {(Number(contaSelecionada.valor) - Number(contaSelecionada.valor_pago || 0)).toFixed(2)}
             </p>
 
             <div className="form-group" style={{ maxWidth: '300px' }}>
@@ -190,7 +189,7 @@ export default function ContasReceber() {
 
             <div className="form-buttons">
               <button className="btn btn-success" onClick={confirmarBaixa} disabled={processando}>
-                {processando ? 'Gravando...' : 'Confirmar Recebimento'}
+                {processando ? 'Gravando...' : 'Confirmar e Gerar Recibo'}
               </button>
               <button className="btn btn-secondary" onClick={() => setContaSelecionada(null)} disabled={processando}>
                 Cancelar
@@ -200,7 +199,6 @@ export default function ContasReceber() {
         </div>
       )}
 
-      {/* Tabela de Contas e Filtros */}
       <div className="table-container">
         <h2>Filtrar Títulos</h2>
         <div className="filter-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '1.5rem' }}>
@@ -241,9 +239,8 @@ export default function ContasReceber() {
                 <th>Valor Total</th>
                 <th>Recebido</th>
                 <th>Saldo Aberto</th>
-                <th>Vencimento</th>
                 <th>Status</th>
-                <th>Ações</th>
+                <th>Ações / Recibo</th>
               </tr>
             </thead>
             <tbody>
@@ -252,7 +249,7 @@ export default function ContasReceber() {
                 const recebido = Number(conta.valor_pago) || (conta.pago ? total : 0)
                 const saldo = Math.max(0, total - recebido)
                 const status = conta.status || (conta.pago ? 'pago' : 'pendente')
-                const codigoRecibo = `REC-${new Date().getFullYear()}-${String(conta.id).padStart(6, '0')}`
+                const codigoRecibo = formatarIdRecibo(conta.id)
 
                 return (
                   <tr key={conta.id}>
@@ -263,7 +260,6 @@ export default function ContasReceber() {
                     <td style={{ color: saldo > 0 ? '#ef4444' : '#6b7280', fontWeight: saldo > 0 ? 'bold' : 'normal' }}>
                       R$ {saldo.toFixed(2)}
                     </td>
-                    <td>{conta.vencimento ? new Date(conta.vencimento).toLocaleDateString('pt-BR') : '-'}</td>
                     <td>
                       <span className={`badge badge-${status === 'pago' ? 'success' : status === 'parcial' ? 'info' : 'warning'}`}>
                         {status === 'pago' ? 'Quitado' : status === 'parcial' ? 'Parcial' : 'Pendente'}
@@ -279,6 +275,14 @@ export default function ContasReceber() {
                             Receber
                           </button>
                         )}
+                        {recebido > 0 && (
+                          <button 
+                            className="btn btn-sm btn-primary" 
+                            onClick={() => gerarReciboPagamento(conta, recebido)}
+                          >
+                            📄 Recibo
+                          </button>
+                        )}
                         <button className="btn btn-sm btn-danger" onClick={() => deletar(conta.id)}>
                           Deletar
                         </button>
@@ -291,7 +295,7 @@ export default function ContasReceber() {
           </table>
         ) : (
           <div className="empty-state">
-            <p>Nenhuma conta encontrada para o filtro selecionado.</p>
+            <p>Nenhuma conta encontrada.</p>
           </div>
         )}
       </div>
