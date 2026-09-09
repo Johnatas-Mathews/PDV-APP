@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { gerarComprovanteVenda, formatarIdVenda } from '../utils/pdfGenerator'
 import '../styles/pages.css'
 
 export default function Vendas() {
@@ -15,7 +16,7 @@ export default function Vendas() {
   const [statusPagamento, setStatusPagamento] = useState('pago')
   const [salvando, setSalvando] = useState(false)
 
-  // 1. Carregar produtos, clientes e histórico de vendas do Supabase
+  // 1. Carregar produtos, clientes e histórico do Supabase
   const carregarDados = async () => {
     const { data: prodData } = await supabase
       .from('produtos')
@@ -42,7 +43,7 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
-  // 2. Adicionar produto à lista temporária da venda
+  // 2. Adicionar produto à lista
   const adicionarItem = () => {
     if (!produtoSelecionado || !quantidade) {
       alert('Selecione um produto e a quantidade')
@@ -84,7 +85,7 @@ export default function Vendas() {
 
   const total = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
 
-  // 3. Finalizar e salvar a venda no Supabase
+  // 3. Finalizar venda, dar baixa no estoque e gerar comprovante
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) {
       alert('Adicione itens à venda')
@@ -92,8 +93,9 @@ export default function Vendas() {
     }
 
     setSalvando(true)
-
     const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
+    const clienteObj = clientes.find(c => c.id === clienteId)
+    const nomeCliente = clienteObj ? clienteObj.nome : 'Cliente Avulso'
 
     // A. Gravar a venda
     const { data: vendaCriada, error: erroVenda } = await supabase
@@ -115,13 +117,10 @@ export default function Vendas() {
       return
     }
 
-    // B. Se a venda for pendente/a prazo, registrar em contas_a_receber
+    // B. Se pendente, cria lançamento em contas_a_receber
     if (statusPagamento === 'pendente') {
       const dataVencimento = new Date()
       dataVencimento.setDate(dataVencimento.getDate() + 30)
-
-      const clienteObj = clientes.find(c => c.id === clienteId)
-      const nomeCliente = clienteObj ? clienteObj.nome : 'Cliente Avulso'
 
       await supabase.from('contas_a_receber').insert([
         {
@@ -134,7 +133,7 @@ export default function Vendas() {
       ])
     }
 
-    // C. Baixar estoque dos produtos vendidos
+    // C. Baixa de estoque
     for (const item of itensVenda) {
       const prodOriginal = produtos.find(p => p.id === item.produtoId)
       if (prodOriginal) {
@@ -146,7 +145,14 @@ export default function Vendas() {
       }
     }
 
-    alert('Venda registrada com sucesso!')
+    // D. Oferece emissão imediata do PDF
+    if (confirm('Venda registrada com sucesso! Deseja gerar o comprovante em PDF agora?')) {
+      gerarComprovanteVenda({
+        ...vendaCriada,
+        clientes: { nome: nomeCliente }
+      })
+    }
+
     setItensVenda([])
     setClienteSelecionado('')
     setFormaPagamento('dinheiro')
@@ -279,19 +285,30 @@ export default function Vendas() {
           <table>
             <thead>
               <tr>
+                <th>Código Único</th>
                 <th>Data</th>
                 <th>Cliente</th>
                 <th>Total</th>
                 <th>Pagamento</th>
+                <th>Comprovante</th>
               </tr>
             </thead>
             <tbody>
               {vendas.map(venda => (
                 <tr key={venda.id}>
+                  <td><strong>{formatarIdVenda(venda.id)}</strong></td>
                   <td>{new Date(venda.created_at).toLocaleString('pt-BR')}</td>
                   <td>{venda.clientes?.nome || 'Cliente Avulso'}</td>
                   <td>R$ {Number(venda.total).toFixed(2)}</td>
                   <td>{venda.forma_pagamento?.toUpperCase()}</td>
+                  <td>
+                    <button 
+                      className="btn btn-sm btn-primary" 
+                      onClick={() => gerarComprovanteVenda(venda)}
+                    >
+                      📄 PDF
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
