@@ -6,6 +6,7 @@ export default function Produtos() {
   const [produtos, setProdutos] = useState([])
   const [nome, setNome] = useState('')
   const [preco, setPreco] = useState('')
+  const [precoCusto, setPrecoCusto] = useState('')
   const [categoria, setCategoria] = useState('')
   const [descricao, setDescricao] = useState('')
   const [estoque, setEstoque] = useState('')
@@ -33,7 +34,7 @@ export default function Produtos() {
   // 2. Salvar ou Atualizar no Supabase
   const salvarProduto = async () => {
     if (!nome || !preco) {
-      alert('Preencha nome e preço')
+      alert('Preencha nome e preço de venda')
       return
     }
 
@@ -42,7 +43,9 @@ export default function Produtos() {
     const payload = {
       nome,
       preco: parseFloat(preco),
+      preco_custo: parseFloat(precoCusto) || 0,
       categoria: categoria || null,
+      descricao: descricao || null,
       estoque: parseInt(estoque) || 0
     }
 
@@ -77,6 +80,7 @@ export default function Produtos() {
   const limparForm = () => {
     setNome('')
     setPreco('')
+    setPrecoCusto('')
     setCategoria('')
     setDescricao('')
     setEstoque('')
@@ -86,6 +90,7 @@ export default function Produtos() {
   const editar = (produto) => {
     setNome(produto.nome)
     setPreco(produto.preco.toString())
+    setPrecoCusto((produto.preco_custo || 0).toString())
     setCategoria(produto.categoria || '')
     setDescricao(produto.descricao || '')
     setEstoque((produto.estoque || 0).toString())
@@ -128,25 +133,36 @@ export default function Produtos() {
             </div>
 
             <div className="form-group">
-              <label>Preço (R$) *</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                value={preco} 
-                onChange={(e) => setPreco(e.target.value)} 
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
               <label>Categoria</label>
               <input 
                 type="text" 
                 value={categoria} 
                 onChange={(e) => setCategoria(e.target.value)} 
                 placeholder="Ex: Bebidas"
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Preço de Custo (R$)</label>
+              <input 
+                type="number" 
+                step="0.01" 
+                value={precoCusto} 
+                onChange={(e) => setPrecoCusto(e.target.value)} 
+                placeholder="0.00"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Preço de Venda (R$) *</label>
+              <input 
+                type="number" 
+                step="0.01" 
+                value={preco} 
+                onChange={(e) => setPreco(e.target.value)} 
+                placeholder="0.00"
               />
             </div>
 
@@ -192,36 +208,48 @@ export default function Produtos() {
               <tr>
                 <th>Nome</th>
                 <th>Categoria</th>
-                <th>Preço</th>
+                <th>Custo</th>
+                <th>Venda</th>
+                <th>Lucro Unit.</th>
                 <th>Estoque</th>
-                <th>Data Cadastro</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {produtos.map(produto => (
-                <tr key={produto.id}>
-                  <td>{produto.nome}</td>
-                  <td>{produto.categoria || '-'}</td>
-                  <td>R$ {Number(produto.preco).toFixed(2)}</td>
-                  <td>
-                    <span className={`badge badge-${produto.estoque > 5 ? 'success' : produto.estoque > 0 ? 'warning' : 'danger'}`}>
-                      {produto.estoque} un.
-                    </span>
-                  </td>
-                  <td>{new Date(produto.created_at).toLocaleDateString('pt-BR')}</td>
-                  <td>
-                    <div className="action-buttons">
-                      <button className="btn btn-sm btn-primary" onClick={() => editar(produto)}>
-                        Editar
-                      </button>
-                      <button className="btn btn-sm btn-danger" onClick={() => deletar(produto.id)}>
-                        Deletar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {produtos.map(produto => {
+                const venda = Number(produto.preco) || 0
+                const custo = Number(produto.preco_custo) || 0
+                const lucro = venda - custo
+
+                return (
+                  <tr key={produto.id}>
+                    <td>{produto.nome}</td>
+                    <td>{produto.categoria || '-'}</td>
+                    <td>R$ {custo.toFixed(2)}</td>
+                    <td>R$ {venda.toFixed(2)}</td>
+                    <td>
+                      <strong style={{ color: lucro >= 0 ? '#10b981' : '#ef4444' }}>
+                        R$ {lucro.toFixed(2)}
+                      </strong>
+                    </td>
+                    <td>
+                      <span className={`badge badge-${produto.estoque > 5 ? 'success' : produto.estoque > 0 ? 'warning' : 'danger'}`}>
+                        {produto.estoque} un.
+                      </span>
+                    </td>
+                    <td>
+                      <div className="action-buttons">
+                        <button className="btn btn-sm btn-primary" onClick={() => editar(produto)}>
+                          Editar
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => deletar(produto.id)}>
+                          Deletar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
