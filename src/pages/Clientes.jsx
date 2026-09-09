@@ -30,10 +30,33 @@ export default function Clientes() {
     carregarClientes()
   }, [])
 
+  // Funções de máscara para blindar campos contra letras
+  const formatarCPF = (valor) => {
+    return valor
+      .replace(/\D/g, '') // remove letras e símbolos
+      .slice(0, 11) // limita a 11 números
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+  }
+
+  const formatarTelefone = (valor) => {
+    return valor
+      .replace(/\D/g, '')
+      .slice(0, 11)
+      .replace(/(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{5})(\d{4})$/, '$1-$2')
+  }
+
   // 2. Salvar ou Atualizar no Supabase
   const salvarCliente = async () => {
     if (!nome.trim()) {
       alert('Preencha o nome')
+      return
+    }
+
+    if (cpf && cpf.replace(/\D/g, '').length !== 11) {
+      alert('O CPF digitado está incompleto (deve conter 11 dígitos)')
       return
     }
 
@@ -143,7 +166,7 @@ export default function Clientes() {
               <input 
                 type="tel" 
                 value={telefone} 
-                onChange={(e) => setTelefone(e.target.value)} 
+                onChange={(e) => setTelefone(formatarTelefone(e.target.value))} 
                 placeholder="(11) 99999-9999"
               />
             </div>
@@ -155,7 +178,7 @@ export default function Clientes() {
               <input 
                 type="text" 
                 value={cpf} 
-                onChange={(e) => setCpf(e.target.value)} 
+                onChange={(e) => setCpf(formatarCPF(e.target.value))} 
                 placeholder="000.000.000-00"
               />
             </div>
