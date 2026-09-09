@@ -1,302 +1,228 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { gerarReciboPagamento, formatarIdRecibo } from '../utils/pdfGenerator'
-import '../styles/pages.css'
+
+// Ícones SVG minimalistas nativos
+const IconReceipt = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+    <path d="M12 17V7" />
+  </svg>
+)
+
+const IconCheck = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+)
+
+const IconClock = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+)
 
 export default function ContasReceber() {
   const [contas, setContas] = useState([])
-  const [filtro, setFiltro] = useState('pendente')
-  const [carregando, setCarregando] = useState(true)
-
-  const [contaSelecionada, setContaSelecionada] = useState(null)
-  const [valorBaixa, setValorBaixa] = useState('')
-  const [processando, setProcessando] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
 
   const carregarContas = async () => {
-    setCarregando(true)
-    const { data, error } = await supabase
+    setLoading(true)
+    let query = supabase
       .from('contas_a_receber')
       .select('*, clientes(nome, telefone)')
-      .order('id', { ascending: false })
+      .order('vencimento', { ascending: true })
 
-    if (error) {
-      console.error('Erro ao buscar contas:', error)
-    } else {
-      setContas(data || [])
+    if (filtro !== 'todas') {
+      query = query.eq('status', filtro)
     }
-    setCarregando(false)
+
+    const { data, error } = await query
+
+    if (!error && data) {
+      setContas(data)
+    }
+    setLoading(false)
   }
 
   useEffect(() => {
     carregarContas()
-  }, [])
+  }, [filtro])
 
-  const iniciarRecebimento = (conta) => {
-    const totalOriginal = Number(conta.valor) || 0
-    const jaPago = Number(conta.valor_pago) || 0
-    const saldoRestante = Math.max(0, totalOriginal - jaPago)
+  // Função para dar baixa total ou parcial
+  const registrarPagamento = async (conta) => {
+    const total = Number(conta.valor || 0)
+    const pagoAteAgora = Number(conta.valor_pago || 0)
+    const saldoRestante = Math.max(0, total - pagoAteAgora)
 
-    setContaSelecionada(conta)
-    setValorBaixa(saldoRestante.toFixed(2))
-  }
+    const valorInformado = prompt(
+      `Recebimento de: ${conta.clientes?.nome || 'Cliente'}\n` +
+      `Total Original: R$ ${total.toFixed(2)}\n` +
+      `Já Pago: R$ ${pagoAteAgora.toFixed(2)}\n` +
+      `Saldo Devedor Atual: R$ ${saldoRestante.toFixed(2)}\n\n` +
+      `Quanto o cliente está pagando agora?`,
+      saldoRestante.toFixed(2)
+    )
 
-  const confirmarBaixa = async () => {
-    if (!contaSelecionada) return
+    if (valorInformado === null) return
 
-    const valorInformado = parseFloat(valorBaixa)
-    const totalOriginal = Number(contaSelecionada.valor) || 0
-    const jaPago = Number(contaSelecionada.valor_pago) || 0
-    const saldoDevedor = totalOriginal - jaPago
+    const numRecebido = parseFloat(valorInformado.replace(',', '.'))
 
-    if (isNaN(valorInformado) || valorInformado <= 0) {
-      alert('Informe um valor de pagamento válido!')
+    if (isNaN(numRecebido) || numRecebido <= 0) {
+      alert('Informe um valor válido.')
       return
     }
 
-    if (valorInformado > saldoDevedor + 0.01) {
-      alert(`O valor informado (R$ ${valorInformado.toFixed(2)}) é maior que o saldo restante (R$ ${saldoDevedor.toFixed(2)})!`)
+    if (numRecebido > saldoRestante) {
+      alert(`O valor informado (R$ ${numRecebido.toFixed(2)}) é maior que a dívida restante!`)
       return
     }
 
-    setProcessando(true)
-
-    const novoValorPago = jaPago + valorInformado
-    const quitado = novoValorPago >= (totalOriginal - 0.009)
-    const novoStatus = quitado ? 'pago' : 'parcial'
+    const novoTotalPago = pagoAteAgora + numRecebido
+    const novoStatus = novoTotalPago >= total ? 'pago' : 'pendente'
 
     const { error } = await supabase
       .from('contas_a_receber')
       .update({
-        valor_pago: novoValorPago,
-        status: novoStatus,
-        data_pagamento: quitado ? new Date().toISOString() : contaSelecionada.data_pagamento
+        valor_pago: novoTotalPago,
+        status: novoStatus
       })
-      .eq('id', contaSelecionada.id)
+      .eq('id', conta.id)
 
     if (error) {
       alert('Erro ao registrar pagamento: ' + error.message)
     } else {
-      // Pergunta se deseja emitir o PDF do recibo
-      if (confirm('Pagamento gravado com sucesso! Deseja gerar o Recibo em PDF?')) {
-        gerarReciboPagamento(
-          { ...contaSelecionada, valor_pago: novoValorPago },
-          valorInformado
-        )
-      }
-
-      setContaSelecionada(null)
-      setValorBaixa('')
-      await carregarContas()
-    }
-
-    setProcessando(false)
-  }
-
-  const deletar = async (id) => {
-    if (confirm('Tem certeza que deseja deletar esta cobrança?')) {
-      const { error } = await supabase
-        .from('contas_a_receber')
-        .delete()
-        .eq('id', id)
-
-      if (error) {
-        alert('Erro ao deletar conta: ' + error.message)
-      } else {
-        await carregarContas()
-      }
+      alert(novoStatus === 'pago' ? 'Conta liquidada com sucesso!' : 'Pagamento parcial registrado!')
+      carregarContas()
     }
   }
 
-  const contasFiltradas = contas.filter(c => {
-    const status = c.status || (c.pago ? 'pago' : 'pendente')
-    if (filtro === 'pendente') return status === 'pendente'
-    if (filtro === 'parcial') return status === 'parcial'
-    if (filtro === 'pago') return status === 'pago'
-    return true
-  })
-
-  const totalPendente = contas.reduce((sum, c) => {
-    const status = c.status || (c.pago ? 'pago' : 'pendente')
-    if (status === 'pago') return sum
-    const total = Number(c.valor) || 0
-    const pago = Number(c.valor_pago) || 0
-    return sum + (total - pago)
-  }, 0)
-
-  const totalRecebido = contas.reduce((sum, c) => {
-    return sum + (Number(c.valor_pago) || (c.pago ? Number(c.valor) : 0))
-  }, 0)
-
-  const qtdEmAberto = contas.filter(c => {
-    const status = c.status || (c.pago ? 'pago' : 'pendente')
-    return status !== 'pago'
-  }).length
+  const totalEmAberto = contas
+    .filter(c => c.status === 'pendente')
+    .reduce((sum, c) => sum + (Number(c.valor || 0) - Number(c.valor_pago || 0)), 0)
 
   return (
-    <div>
-      <h1 className="page-title">Contas a Receber</h1>
+    <div className="cr-wrapper">
+      <style>{`
+        .cr-wrapper { max-width: 1200px; margin: 0 auto; }
+        .cr-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
+        .cr-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
+        .cr-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
+        .summary-card { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 1rem 1.5rem; display: flex; flex-direction: column; }
+        .summary-card span { font-size: 0.72rem; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.05em; }
+        .summary-card strong { font-size: 1.6rem; font-weight: 800; color: #c2410c; letter-spacing: -0.02em; }
+        .filter-bar { display: flex; gap: 8px; margin-bottom: 1.25rem; }
+        .filter-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+        .filter-btn.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
+        .table-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1.25rem; border-bottom: 1px solid #e2e8f0; }
+        td { padding: 1rem 1.25rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        tbody tr:hover { background: #f8fafc; }
+        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-pendente { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
+        .badge-pago { background: #ecfdf5; color: #047857; border: 1px solid #d1fae5; }
+        .btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: #ffffff; }
+        .btn-action:hover { background: #1d4ed8; }
+      `}</style>
 
-      <div className="metrics-grid">
-        <div className="metric-card">
-          <div className="metric-icon">📋</div>
-          <div className="metric-content">
-            <p className="metric-label">Saldo a Receber</p>
-            <p className="metric-value" style={{ color: '#ef4444' }}>
-              R$ {totalPendente.toFixed(2)}
-            </p>
-          </div>
+      <div className="cr-header">
+        <div>
+          <h1 className="cr-title">Contas a Receber</h1>
+          <p className="cr-subtitle">Gestão de crediário, entradas e quitação de vendas a prazo</p>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon">✅</div>
-          <div className="metric-content">
-            <p className="metric-label">Total Já Recebido</p>
-            <p className="metric-value" style={{ color: '#10b981' }}>
-              R$ {totalRecebido.toFixed(2)}
-            </p>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon">⏳</div>
-          <div className="metric-content">
-            <p className="metric-label">Títulos em Aberto</p>
-            <p className="metric-value">{qtdEmAberto}</p>
-          </div>
+        <div className="summary-card">
+          <span>Saldo Total em Aberto</span>
+          <strong>R$ {totalEmAberto.toFixed(2)}</strong>
         </div>
       </div>
 
-      {contaSelecionada && (
-        <div className="form-container" style={{ border: '2px solid #10b981', marginBottom: '2rem' }}>
-          <div className="form-section">
-            <h2>Registrar Pagamento — {formatarIdRecibo(contaSelecionada.id)}</h2>
-            <p style={{ margin: '8px 0', color: '#4b5563', lineHeight: '1.6' }}>
-              <strong>Cliente:</strong> {contaSelecionada.clientes?.nome || contaSelecionada.descricao || 'Cliente Avulso'} <br />
-              <strong>Valor Original:</strong> R$ {Number(contaSelecionada.valor).toFixed(2)} <br />
-              <strong>Já Pago:</strong> R$ {Number(contaSelecionada.valor_pago || 0).toFixed(2)} <br />
-              <strong>Saldo Restante:</strong> R$ {(Number(contaSelecionada.valor) - Number(contaSelecionada.valor_pago || 0)).toFixed(2)}
-            </p>
+      <div className="filter-bar">
+        <button 
+          className={`filter-btn ${filtro === 'pendente' ? 'active' : ''}`}
+          onClick={() => setFiltro('pendente')}
+        >
+          Pendentes
+        </button>
+        <button 
+          className={`filter-btn ${filtro === 'pago' ? 'active' : ''}`}
+          onClick={() => setFiltro('pago')}
+        >
+          Quitadas
+        </button>
+        <button 
+          className={`filter-btn ${filtro === 'todas' ? 'active' : ''}`}
+          onClick={() => setFiltro('todas')}
+        >
+          Todas
+        </button>
+      </div>
 
-            <div className="form-group" style={{ maxWidth: '300px' }}>
-              <label>Valor sendo recebido agora (R$):</label>
-              <input
-                type="number"
-                step="0.01"
-                value={valorBaixa}
-                onChange={(e) => setValorBaixa(e.target.value)}
-              />
-            </div>
-
-            <div className="form-buttons">
-              <button className="btn btn-success" onClick={confirmarBaixa} disabled={processando}>
-                {processando ? 'Gravando...' : 'Confirmar e Gerar Recibo'}
-              </button>
-              <button className="btn btn-secondary" onClick={() => setContaSelecionada(null)} disabled={processando}>
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="table-container">
-        <h2>Filtrar Títulos</h2>
-        <div className="filter-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '1.5rem' }}>
-          <button 
-            className={`btn ${filtro === 'pendente' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFiltro('pendente')}
-          >
-            Pendentes
-          </button>
-          <button 
-            className={`btn ${filtro === 'parcial' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFiltro('parcial')}
-          >
-            Parciais
-          </button>
-          <button 
-            className={`btn ${filtro === 'pago' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFiltro('pago')}
-          >
-            Pagos
-          </button>
-          <button 
-            className={`btn ${filtro === 'todos' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFiltro('todos')}
-          >
-            Todos ({contas.length})
-          </button>
-        </div>
-
-        {carregando ? (
-          <p>Carregando títulos...</p>
-        ) : contasFiltradas.length > 0 ? (
+      <div className="table-box">
+        {loading ? (
+          <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Carregando dados...</p>
+        ) : contas.length === 0 ? (
+          <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Nenhum título encontrado.</p>
+        ) : (
           <table>
             <thead>
               <tr>
-                <th>Cód. Recibo</th>
-                <th>Cliente / Descrição</th>
+                <th>Descrição / Venda</th>
+                <th>Cliente</th>
+                <th>Vencimento</th>
                 <th>Valor Total</th>
-                <th>Recebido</th>
-                <th>Saldo Aberto</th>
+                <th>Valor Pago</th>
+                <th>Saldo Devedor</th>
                 <th>Status</th>
-                <th>Ações / Recibo</th>
+                <th style={{ textAlign: 'center' }}>Ação</th>
               </tr>
             </thead>
             <tbody>
-              {contasFiltradas.map(conta => {
-                const total = Number(conta.valor) || 0
-                const recebido = Number(conta.valor_pago) || (conta.pago ? total : 0)
-                const saldo = Math.max(0, total - recebido)
-                const status = conta.status || (conta.pago ? 'pago' : 'pendente')
-                const codigoRecibo = formatarIdRecibo(conta.id)
+              {contas.map(conta => {
+                const total = Number(conta.valor || 0)
+                const pago = Number(conta.valor_pago || 0)
+                const saldo = Math.max(0, total - pago)
+                const isPendente = conta.status === 'pendente'
 
                 return (
                   <tr key={conta.id}>
-                    <td><strong>{codigoRecibo}</strong></td>
-                    <td>{conta.clientes?.nome || conta.descricao || 'Cliente Avulso'}</td>
+                    <td><strong>{conta.descricao || `Título #${conta.id}`}</strong></td>
+                    <td>
+                      <div>{conta.clientes?.nome || 'Não identificado'}</div>
+                      {conta.clientes?.telefone && (
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{conta.clientes.telefone}</span>
+                      )}
+                    </td>
+                    <td>{conta.vencimento ? new Date(conta.vencimento).toLocaleDateString('pt-BR') : '-'}</td>
                     <td>R$ {total.toFixed(2)}</td>
-                    <td style={{ color: '#10b981' }}>R$ {recebido.toFixed(2)}</td>
-                    <td style={{ color: saldo > 0 ? '#ef4444' : '#6b7280', fontWeight: saldo > 0 ? 'bold' : 'normal' }}>
-                      R$ {saldo.toFixed(2)}
+                    <td style={{ color: pago > 0 ? '#16a34a' : '#64748b' }}>
+                      R$ {pago.toFixed(2)}
                     </td>
                     <td>
-                      <span className={`badge badge-${status === 'pago' ? 'success' : status === 'parcial' ? 'info' : 'warning'}`}>
-                        {status === 'pago' ? 'Quitado' : status === 'parcial' ? 'Parcial' : 'Pendente'}
+                      <strong style={{ color: saldo > 0 ? '#ea580c' : '#16a34a' }}>
+                        R$ {saldo.toFixed(2)}
+                      </strong>
+                    </td>
+                    <td>
+                      <span className={`badge ${isPendente ? 'badge-pendente' : 'badge-pago'}`}>
+                        {isPendente ? <><IconClock /> Pendente</> : <><IconCheck /> Quitado</>}
                       </span>
                     </td>
-                    <td>
-                      <div className="action-buttons">
-                        {status !== 'pago' && (
-                          <button 
-                            className="btn btn-sm btn-success" 
-                            onClick={() => iniciarRecebimento(conta)}
-                          >
-                            Receber
-                          </button>
-                        )}
-                        {recebido > 0 && (
-                          <button 
-                            className="btn btn-sm btn-primary" 
-                            onClick={() => gerarReciboPagamento(conta, recebido)}
-                          >
-                            📄 Recibo
-                          </button>
-                        )}
-                        <button className="btn btn-sm btn-danger" onClick={() => deletar(conta.id)}>
-                          Deletar
+                    <td style={{ textAlign: 'center' }}>
+                      {isPendente && (
+                        <button className="btn-action" onClick={() => registrarPagamento(conta)}>
+                          <IconCheck /> Receber
                         </button>
-                      </div>
+                      )}
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-        ) : (
-          <div className="empty-state">
-            <p>Nenhuma conta encontrada.</p>
-          </div>
         )}
       </div>
     </div>
