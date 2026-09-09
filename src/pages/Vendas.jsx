@@ -1,6 +1,20 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
+import { 
+  Store, 
+  Plus, 
+  Minus, 
+  Trash2, 
+  FileText, 
+  MessageCircle, 
+  Edit3, 
+  Check, 
+  X, 
+  ShoppingCart, 
+  User, 
+  CreditCard 
+} from 'lucide-react'
 import '../styles/pages.css'
 
 export default function Vendas() {
@@ -15,16 +29,13 @@ export default function Vendas() {
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [statusPagamento, setStatusPagamento] = useState('pago')
   
-  // Desconto e Troco
   const [desconto, setDesconto] = useState(0)
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // Controle de Edição de Venda Existente
   const [vendaEditando, setVendaEditando] = useState(null)
   const [itensOriginais, setItensOriginais] = useState([])
 
-  // 1. Carregar dados do Supabase
   const carregarDados = async () => {
     const { data: prodData } = await supabase
       .from('produtos')
@@ -51,7 +62,6 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
-  // 2. Adicionar produto à venda
   const adicionarItem = () => {
     if (!produtoSelecionado || !quantidade) {
       alert('Selecione um produto e a quantidade')
@@ -70,7 +80,6 @@ export default function Vendas() {
     const itemExistente = itensVenda.find(i => i.produtoId === produto.id)
     const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
 
-    // Se estiver editando, considera o que já pertencia a essa venda original
     const itemOriginal = itensOriginais.find(i => i.produtoId === produto.id)
     const estoqueDisponivelReal = produto.estoque + (itemOriginal ? itemOriginal.quantidade : 0)
 
@@ -106,7 +115,6 @@ export default function Vendas() {
     setQuantidade('1')
   }
 
-  // 3. Ajuste rápido de quantidade (+ e -)
   const alterarQtdItem = (id, delta) => {
     setItensVenda(itensVenda.map(item => {
       if (item.id === id) {
@@ -137,7 +145,6 @@ export default function Vendas() {
     setItensVenda(itensVenda.filter(item => item.id !== id))
   }
 
-  // Cálculos de totais e troco
   const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
   const totalComDesconto = Math.max(0, subtotal - (parseFloat(desconto) || 0))
   const numValorRecebido = parseFloat(valorRecebido) || 0
@@ -145,7 +152,6 @@ export default function Vendas() {
     ? numValorRecebido - totalComDesconto 
     : 0
 
-  // 4. Iniciar Edição de uma Venda
   const iniciarEdicao = (venda) => {
     setVendaEditando(venda)
     setClienteSelecionado(venda.cliente_id ? String(venda.cliente_id) : '')
@@ -155,7 +161,6 @@ export default function Vendas() {
     setItensVenda(itensClonados)
     setItensOriginais(itensClonados)
     
-    // Calcula eventual desconto original
     const somaItens = itensClonados.reduce((s, i) => s + (Number(i.subtotal) || 0), 0)
     const descOriginal = Math.max(0, somaItens - Number(venda.total || 0))
     setDesconto(descOriginal)
@@ -174,7 +179,6 @@ export default function Vendas() {
     setValorRecebido('')
   }
 
-  // 5. Enviar Comprovante no WhatsApp
   const enviarComprovanteWhatsApp = (codigoVenda, nomeCli, telCli, totalVenda) => {
     if (!telCli) {
       alert('Este cliente não possui telefone cadastrado!')
@@ -185,17 +189,16 @@ export default function Vendas() {
     const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
 
     const mensagem = encodeURIComponent(
-      `Olá, ${nomeCli}! 🛍️\n` +
+      `Olá, ${nomeCli}!\n` +
       `Obrigado por comprar conosco!\n\n` +
-      `📄 Pedido: *${codigoVenda}*\n` +
-      `💰 Total: *R$ ${Number(totalVenda).toFixed(2)}*\n\n` +
+      `Pedido: *${codigoVenda}*\n` +
+      `Total: *R$ ${Number(totalVenda).toFixed(2)}*\n\n` +
       `Qualquer dúvida, estamos à disposição!`
     )
 
     window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
   }
 
-  // 6. Salvar Venda (Nova ou Atualização)
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) {
       alert('Adicione itens à venda')
@@ -215,9 +218,6 @@ export default function Vendas() {
 
     try {
       if (vendaEditando) {
-        // === MODO EDIÇÃO ===
-        
-        // 1. Rebalancear estoque: compara itensOriginais com novos itensVenda
         const mapaOriginal = {}
         itensOriginais.forEach(i => {
           mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade
@@ -228,14 +228,13 @@ export default function Vendas() {
           mapaNovo[i.produtoId] = (mapaNovo[i.produtoId] || 0) + i.quantidade
         })
 
-        // Lista com todos os IDs de produto envolvidos na alteração
         const todosProdutoIds = Array.from(new Set([...Object.keys(mapaOriginal), ...Object.keys(mapaNovo)]))
 
         for (const prodIdStr of todosProdutoIds) {
           const prodId = parseInt(prodIdStr)
           const qtdAntiga = mapaOriginal[prodId] || 0
           const qtdNova = mapaNovo[prodId] || 0
-          const diferenca = qtdNova - qtdAntiga // positivo = saiu mais do estoque; negativo = devolve pro estoque
+          const diferenca = qtdNova - qtdAntiga
 
           if (diferenca !== 0) {
             const prodAtual = produtos.find(p => p.id === prodId)
@@ -249,7 +248,6 @@ export default function Vendas() {
           }
         }
 
-        // 2. Atualizar registro da venda
         const { error: erroUpdate } = await supabase
           .from('vendas')
           .update({
@@ -262,7 +260,6 @@ export default function Vendas() {
 
         if (erroUpdate) throw erroUpdate
 
-        // 3. Atualizar contas a receber se houver título vinculado
         await supabase
           .from('contas_a_receber')
           .update({
@@ -288,7 +285,6 @@ export default function Vendas() {
         cancelarEdicao()
 
       } else {
-        // === MODO NOVA VENDA ===
         const { data: vendaCriada, error: erroVenda } = await supabase
           .from('vendas')
           .insert([
@@ -319,7 +315,6 @@ export default function Vendas() {
           ])
         }
 
-        // Baixa regular de estoque
         for (const item of itensVenda) {
           const prodOriginal = produtos.find(p => p.id === item.produtoId)
           if (prodOriginal) {
@@ -362,41 +357,45 @@ export default function Vendas() {
   return (
     <div>
       <div style={{ marginBottom: '1.5rem' }}>
-        <h1 className="page-title" style={{ marginBottom: '2px' }}>
+        <h1 className="page-title" style={{ marginBottom: '4px' }}>
           {vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}
         </h1>
-        <p style={{ color: '#6b7280', fontSize: '14px', margin: 0, fontWeight: 500 }}>
-          🏪 {DADOS_EMPRESA.nome}
+        <p style={{ color: '#64748b', fontSize: '13px', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Store size={16} color="#2563eb" /> {DADOS_EMPRESA.nome}
         </p>
       </div>
 
       {vendaEditando && (
         <div style={{ 
-          background: '#fef3c7', 
-          border: '1px solid #f59e0b', 
+          background: '#fffbeb', 
+          border: '1px solid #fef3c7', 
           color: '#92400e', 
           padding: '12px 16px', 
-          borderRadius: '8px', 
+          borderRadius: '12px', 
           marginBottom: '1.5rem',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
         }}>
-          <span>
-            ⚠️ <strong>Modo de Edição Ativo:</strong> Você pode adicionar, remover ou ajustar as quantidades. O estoque será rebalanceado automaticamente.
+          <span style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Edit3 size={16} /> <strong>Modo de Edição:</strong> Modifique os itens ou valores. O estoque será rebalanceado.
           </span>
           <button 
             className="btn btn-sm btn-secondary" 
             onClick={cancelarEdicao}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            ✕ Cancelar Edição
+            <X size={14} /> Cancelar
           </button>
         </div>
       )}
 
       <div className="form-container">
         <div className="form-section">
-          <h2>Dados da Venda</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <User size={18} color="#2563eb" /> Dados da Venda
+          </h2>
           
           <div className="form-group">
             <label>Cliente</label>
@@ -412,7 +411,9 @@ export default function Vendas() {
 
           <div className="form-row">
             <div className="form-group">
-              <label>Forma de Pagamento</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CreditCard size={14} /> Forma de Pagamento
+              </label>
               <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
                 <option value="dinheiro">Dinheiro</option>
                 <option value="pix">PIX</option>
@@ -434,7 +435,9 @@ export default function Vendas() {
         </div>
 
         <div className="form-section">
-          <h2>Adicionar Item</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShoppingCart size={18} color="#2563eb" /> Adicionar Item
+          </h2>
           
           <div className="form-row">
             <div className="form-group" style={{ flex: 3 }}>
@@ -460,8 +463,8 @@ export default function Vendas() {
             </div>
           </div>
 
-          <button className="btn btn-primary" onClick={adicionarItem}>
-            + Adicionar ao Pedido
+          <button className="btn btn-primary" onClick={adicionarItem} style={{ gap: '6px' }}>
+            <Plus size={16} /> Adicionar ao Pedido
           </button>
         </div>
       </div>
@@ -482,27 +485,29 @@ export default function Vendas() {
             <tbody>
               {itensVenda.map(item => (
                 <tr key={item.id}>
-                  <td>{item.nomeProduto}</td>
+                  <td><strong>{item.nomeProduto}</strong></td>
                   <td>R$ {item.preco.toFixed(2)}</td>
                   <td style={{ textAlign: 'center' }}>
-                    <button 
-                      style={{ padding: '2px 8px', marginRight: '6px', cursor: 'pointer' }}
-                      onClick={() => alterarQtdItem(item.id, -1)}
-                    >
-                      -
-                    </button>
-                    <strong>{item.quantidade}</strong>
-                    <button 
-                      style={{ padding: '2px 8px', marginLeft: '6px', cursor: 'pointer' }}
-                      onClick={() => alterarQtdItem(item.id, 1)}
-                    >
-                      +
-                    </button>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '8px' }}>
+                      <button 
+                        style={{ border: 'none', background: '#ffffff', borderRadius: '4px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                        onClick={() => alterarQtdItem(item.id, -1)}
+                      >
+                        <Minus size={14} color="#475569" />
+                      </button>
+                      <span style={{ fontWeight: 600, minWidth: '18px' }}>{item.quantidade}</span>
+                      <button 
+                        style={{ border: 'none', background: '#ffffff', borderRadius: '4px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                        onClick={() => alterarQtdItem(item.id, 1)}
+                      >
+                        <Plus size={14} color="#475569" />
+                      </button>
+                    </div>
                   </td>
                   <td>R$ {item.subtotal.toFixed(2)}</td>
                   <td style={{ textAlign: 'center' }}>
-                    <button className="btn btn-sm btn-danger" onClick={() => removerItem(item.id)}>
-                      Remover
+                    <button className="btn btn-sm btn-danger" onClick={() => removerItem(item.id)} style={{ gap: '4px' }}>
+                      <Trash2 size={14} /> Remover
                     </button>
                   </td>
                 </tr>
@@ -510,12 +515,11 @@ export default function Vendas() {
             </tbody>
           </table>
 
-          {/* Área Financeira: Desconto, Totais e Troco */}
-          <div style={{ marginTop: '1.5rem', background: '#f9fafb', padding: '1.25rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+          <div style={{ marginTop: '1.5rem', background: '#f8fafc', padding: '1.25rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#4b5563', marginBottom: '4px' }}>
-                  Desconto (R$):
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>
+                  DESCONTO (R$):
                 </label>
                 <input 
                   type="number" 
@@ -523,14 +527,14 @@ export default function Vendas() {
                   min="0"
                   value={desconto} 
                   onChange={(e) => setDesconto(e.target.value)}
-                  style={{ width: '120px', padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+                  style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 />
               </div>
 
               {formaPagamento === 'dinheiro' && (
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#4b5563', marginBottom: '4px' }}>
-                    Valor Entregue pelo Cliente (R$):
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>
+                    VALOR RECEBIDO (R$):
                   </label>
                   <input 
                     type="number" 
@@ -538,20 +542,20 @@ export default function Vendas() {
                     placeholder="0,00"
                     value={valorRecebido} 
                     onChange={(e) => setValorRecebido(e.target.value)}
-                    style={{ width: '150px', padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+                    style={{ width: '150px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
               )}
 
               {formaPagamento === 'dinheiro' && troco > 0 && (
-                <div style={{ background: '#ecfdf5', padding: '8px 16px', borderRadius: '6px', border: '1px solid #10b981' }}>
-                  <span style={{ fontSize: '13px', color: '#065f46', display: 'block' }}>Troco a Devolver:</span>
-                  <strong style={{ fontSize: '20px', color: '#047857' }}>R$ {troco.toFixed(2)}</strong>
+                <div style={{ background: '#ecfdf5', padding: '8px 16px', borderRadius: '10px', border: '1px solid #10b981' }}>
+                  <span style={{ fontSize: '11px', color: '#047857', display: 'block', fontWeight: 600 }}>TROCO A DEVOLVER:</span>
+                  <strong style={{ fontSize: '1.25rem', color: '#047857' }}>R$ {troco.toFixed(2)}</strong>
                 </div>
               )}
             </div>
 
-            <div className="total-section" style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+            <div className="total-section" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
               <div className="total-info">
                 <span>Total a Pagar:</span>
                 <span className="total-value" style={{ color: '#2563eb' }}>R$ {totalComDesconto.toFixed(2)}</span>
@@ -560,15 +564,20 @@ export default function Vendas() {
                 className="btn btn-success btn-lg" 
                 onClick={finalizarVenda}
                 disabled={salvando}
+                style={{ gap: '8px' }}
               >
-                {salvando ? 'Gravando...' : (vendaEditando ? '✓ Salvar Alterações da Venda' : '✓ Finalizar Venda')}
+                {salvando ? 'Gravando...' : (
+                  <>
+                    <Check size={18} />
+                    {vendaEditando ? 'Salvar Alterações' : 'Finalizar Venda'}
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Histórico das Últimas Vendas */}
       {vendas.length > 0 && (
         <div className="table-container">
           <h2>Últimas Vendas Realizadas</h2>
@@ -595,28 +604,33 @@ export default function Vendas() {
                     <td>{new Date(venda.created_at).toLocaleString('pt-BR')}</td>
                     <td>{venda.clientes?.nome || 'Cliente Avulso'}</td>
                     <td>R$ {Number(venda.total).toFixed(2)}</td>
-                    <td>{venda.forma_pagamento?.toUpperCase()}</td>
+                    <td><span className="badge badge-info">{venda.forma_pagamento?.toUpperCase()}</span></td>
                     <td style={{ textAlign: 'center' }}>
-                      <div className="action-buttons" style={{ justifyContent: 'center' }}>
+                      <div className="action-buttons" style={{ justifyContent: 'center', gap: '6px' }}>
                         <button 
                           className="btn btn-sm btn-secondary" 
                           onClick={() => iniciarEdicao(venda)}
-                          title="Editar itens ou forma de pagamento"
+                          title="Editar venda"
+                          style={{ gap: '4px' }}
                         >
-                          ✏️ Editar
+                          <Edit3 size={14} /> Editar
                         </button>
                         <button 
                           className="btn btn-sm btn-primary" 
                           onClick={() => gerarComprovanteVenda(venda)}
+                          title="Comprovante PDF"
+                          style={{ gap: '4px' }}
                         >
-                          📄 PDF
+                          <FileText size={14} /> PDF
                         </button>
                         {tel && (
                           <button 
                             className="btn btn-sm btn-success" 
                             onClick={() => enviarComprovanteWhatsApp(cod, nome, tel, venda.total)}
+                            title="Enviar WhatsApp"
+                            style={{ gap: '4px' }}
                           >
-                            📲 Zap
+                            <MessageCircle size={14} /> Zap
                           </button>
                         )}
                       </div>
