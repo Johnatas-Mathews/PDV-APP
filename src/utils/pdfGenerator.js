@@ -1,25 +1,23 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-/**
- * Formata o ID no padrão VEN-ANO-000000
- */
+// Altere os dados da sua loja aqui:
+export const DADOS_EMPRESA = {
+  nome: 'TECCO',
+  subtitulo: 'MODA MASCULINA',
+  contato: 'Tel/WhatsApp: (87) 99995-1762'
+}
+
 export const formatarIdVenda = (id) => {
   const ano = new Date().getFullYear()
   return `VEN-${ano}-${String(id || 0).padStart(6, '0')}`
 }
 
-/**
- * Formata o ID no padrão REC-ANO-000000
- */
 export const formatarIdRecibo = (id) => {
   const ano = new Date().getFullYear()
   return `REC-${ano}-${String(id || 0).padStart(6, '0')}`
 }
 
-/**
- * Gera o PDF do Comprovante de Venda
- */
 export const gerarComprovanteVenda = (venda) => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -32,29 +30,41 @@ export const gerarComprovanteVenda = (venda) => {
     ? new Date(venda.created_at).toLocaleString('pt-BR')
     : new Date().toLocaleString('pt-BR')
 
-  // Cabeçalho da Empresa / Recibo
-  doc.setFontSize(18)
+  // Cabeçalho da Loja
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
   doc.setTextColor(31, 41, 55)
-  doc.text('COMPROVANTE DE VENDA', 14, 20)
+  doc.text(DADOS_EMPRESA.nome.toUpperCase(), 14, 18)
 
-  doc.setFontSize(10)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
   doc.setTextColor(107, 114, 128)
-  doc.text(`Identificador Único: ${codigoVenda}`, 14, 27)
-  doc.text(`Data / Hora: ${dataVenda}`, 14, 32)
+  doc.text(`${DADOS_EMPRESA.subtitulo} • ${DADOS_EMPRESA.contato}`, 14, 23)
+
+  // Identificação do Documento
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(37, 99, 235)
+  doc.text('COMPROVANTE DE VENDA', 14, 31)
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(107, 114, 128)
+  doc.text(`Identificador: ${codigoVenda}  |  Data/Hora: ${dataVenda}`, 14, 36)
 
   // Linha divisória
   doc.setDrawColor(229, 231, 235)
   doc.setLineWidth(0.5)
-  doc.line(14, 36, 196, 36)
+  doc.line(14, 40, 196, 40)
 
-  // Dados do Cliente e Pagamento
-  doc.setFontSize(11)
+  // Informações do Cliente e Pagamento
+  doc.setFontSize(10)
   doc.setTextColor(55, 65, 81)
   const nomeCliente = venda.clientes?.nome || venda.cliente || 'Cliente Avulso'
-  doc.text(`Cliente: ${nomeCliente}`, 14, 44)
-  doc.text(`Forma de Pagamento: ${(venda.forma_pagamento || venda.pagamento || 'DINHEIRO').toUpperCase()}`, 14, 50)
+  doc.text(`Cliente: ${nomeCliente}`, 14, 47)
+  doc.text(`Forma de Pagamento: ${(venda.forma_pagamento || venda.pagamento || 'DINHEIRO').toUpperCase()}`, 14, 53)
 
-  // Tabela de Itens
+  // Tabela de Produtos
   const itens = Array.isArray(venda.itens) ? venda.itens : []
   const linhasTabela = itens.map((item, index) => [
     index + 1,
@@ -65,7 +75,7 @@ export const gerarComprovanteVenda = (venda) => {
   ])
 
   autoTable(doc, {
-    startY: 56,
+    startY: 59,
     head: [['#', 'Descrição do Item', 'Qtd', 'Preço Unit.', 'Subtotal']],
     body: linhasTabela,
     theme: 'striped',
@@ -79,26 +89,24 @@ export const gerarComprovanteVenda = (venda) => {
     }
   })
 
-  // Totalizador
+  // Total
   const posFinalY = (doc).lastAutoTable.finalY + 10
   const valorTotal = Number(venda.total || 0).toFixed(2)
 
   doc.setFontSize(13)
+  doc.setFont('helvetica', 'bold')
   doc.setTextColor(17, 24, 39)
   doc.text(`VALOR TOTAL: R$ ${valorTotal}`, 196, posFinalY, { align: 'right' })
 
-  // Rodapé Informativo
+  // Rodapé
   doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
   doc.setTextColor(156, 163, 175)
-  doc.text('Obrigado pela preferência! Documento gerado automaticamente pelo PDV Sistema.', 105, 285, { align: 'center' })
+  doc.text(`${DADOS_EMPRESA.nome} — Agradecemos a preferência!`, 105, 285, { align: 'center' })
 
-  // Salvar PDF
   doc.save(`${codigoVenda}.pdf`)
 }
 
-/**
- * Gera o PDF do Recibo de Pagamento / Quitação
- */
 export const gerarReciboPagamento = (conta, valorRecebidoAgora) => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -114,37 +122,48 @@ export const gerarReciboPagamento = (conta, valorRecebidoAgora) => {
   const valorRecebidoMomento = Number(valorRecebidoAgora || valorTotalOriginal)
   const saldoRestante = Math.max(0, valorTotalOriginal - valorPagoTotal)
 
-  // Cabeçalho
-  doc.setFontSize(20)
-  doc.setTextColor(16, 185, 129)
-  doc.text('RECIBO DE PAGAMENTO', 14, 22)
+  // Cabeçalho da Loja
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(31, 41, 55)
+  doc.text(DADOS_EMPRESA.nome.toUpperCase(), 14, 18)
 
-  doc.setFontSize(10)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
   doc.setTextColor(107, 114, 128)
-  doc.text(`Identificador: ${codigoRecibo}`, 14, 29)
-  doc.text(`Emitido em: ${dataHoje}`, 14, 34)
+  doc.text(`${DADOS_EMPRESA.subtitulo} • ${DADOS_EMPRESA.contato}`, 14, 23)
+
+  // Título do Recibo
+  doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(16, 185, 129)
+  doc.text('RECIBO DE PAGAMENTO / QUITAÇÃO', 14, 31)
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(107, 114, 128)
+  doc.text(`Identificador: ${codigoRecibo}  |  Emitido em: ${dataHoje}`, 14, 36)
 
   doc.setDrawColor(229, 231, 235)
   doc.setLineWidth(0.5)
-  doc.line(14, 38, 196, 38)
+  doc.line(14, 40, 196, 40)
 
-  // Texto declaratório de quitação
-  doc.setFontSize(11)
+  // Dados do Pagador
+  doc.setFontSize(10)
   doc.setTextColor(55, 65, 81)
-  
   const tipoQuitacao = saldoRestante <= 0.009 ? 'QUITAÇÃO TOTAL' : 'AMORTIZAÇÃO PARCIAL'
   
-  doc.text(`Tipo de Lançamento: ${tipoQuitacao}`, 14, 46)
-  doc.text(`Recebemos de: ${nomeCliente}`, 14, 53)
-  doc.text(`A quantia de: R$ ${valorRecebidoMomento.toFixed(2)}`, 14, 60)
-  doc.text(`Referente a: ${conta.descricao || 'Cobrança em aberto'}`, 14, 67)
+  doc.text(`Operação: ${tipoQuitacao}`, 14, 48)
+  doc.text(`Recebemos de: ${nomeCliente}`, 14, 55)
+  doc.text(`A quantia de: R$ ${valorRecebidoMomento.toFixed(2)}`, 14, 62)
+  doc.text(`Referente a: ${conta.descricao || 'Título financeiro em aberto'}`, 14, 69)
 
-  // Tabela Resumo Financeiro
+  // Tabela Demonstrativa
   autoTable(doc, {
-    startY: 75,
+    startY: 77,
     head: [['Demonstrativo do Título', 'Valores']],
     body: [
-      ['Valor Original da Cobrança', `R$ ${valorTotalOriginal.toFixed(2)}`],
+      ['Valor Original da Dívida', `R$ ${valorTotalOriginal.toFixed(2)}`],
       ['Valor Pago Neste Recibo', `R$ ${valorRecebidoMomento.toFixed(2)}`],
       ['Total Acumulado Quitado', `R$ ${valorPagoTotal.toFixed(2)}`],
       ['Saldo Devedor Restante', `R$ ${saldoRestante.toFixed(2)}`]
@@ -157,13 +176,14 @@ export const gerarReciboPagamento = (conta, valorRecebidoAgora) => {
     }
   })
 
-  // Campo de Assinatura
-  const posAssinaturaY = (doc).lastAutoTable.finalY + 40
+  // Campo para Assinatura
+  const posAssinaturaY = (doc).lastAutoTable.finalY + 35
+  doc.setDrawColor(156, 163, 175)
   doc.line(60, posAssinaturaY, 150, posAssinaturaY)
   doc.setFontSize(9)
   doc.setTextColor(107, 114, 128)
-  doc.text('Assinatura do Responsável', 105, posAssinaturaY + 6, { align: 'center' })
+  doc.text(DADOS_EMPRESA.nome, 105, posAssinaturaY + 5, { align: 'center' })
+  doc.text('Assinatura do Emitente', 105, posAssinaturaY + 10, { align: 'center' })
 
-  // Salvar PDF
   doc.save(`${codigoRecibo}.pdf`)
 }
