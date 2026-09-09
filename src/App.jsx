@@ -1,51 +1,67 @@
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
 import Clientes from './pages/Clientes'
 import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
-import './styles/app.css'
+import { 
+  LayoutDashboard, 
+  ShoppingCart, 
+  Users, 
+  Package, 
+  Receipt, 
+  BarChart3,
+  Store 
+} from 'lucide-react'
+import './styles/App.css'
+import './styles/pages.css'
 
 export default function App() {
-  return (
-    <Router>
-      <div className="app">
-        {/* SIDEBAR */}
-        <aside className="sidebar">
-          <div className="logo">
-            <h1>PDV</h1>
-            <p>Sistema</p>
-          </div>
-          
-          <nav className="menu">
-            <Link to="/" className="menu-item">
-              <span>📊</span> Dashboard
-            </Link>
-            <Link to="/vendas" className="menu-item">
-              <span>💰</span> Vendas
-            </Link>
-            <Link to="/clientes" className="menu-item">
-              <span>👥</span> Clientes
-            </Link>
-            <Link to="/produtos" className="menu-item">
-              <span>📦</span> Produtos
-            </Link>
-            <Link to="/contas-receber" className="menu-item">
-              <span>📋</span> Contas a Receber
-            </Link>
-            <Link to="/relatorios" className="menu-item">
-              <span>📈</span> Relatórios
-            </Link>
-          </nav>
+  const links = [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/vendas', label: 'Vendas', icon: ShoppingCart },
+    { to: '/clientes', label: 'Clientes', icon: Users },
+    { to: '/produtos', label: 'Produtos', icon: Package },
+    { to: '/contas-receber', label: 'Contas a Receber', icon: Receipt },
+    { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
+  ]
 
-          <div className="sidebar-footer">
-            <p>v1.0.0</p>
+  return (
+    <BrowserRouter>
+      <div className="app-layout">
+        {/* Menu Lateral Minimalista Moderno */}
+        <aside className="app-sidebar">
+          <div className="sidebar-brand">
+            <div className="brand-badge">
+              <Store size={18} />
+            </div>
+            <div className="brand-text">
+              <span className="brand-name">TECCO</span>
+              <span className="brand-sub">PDV SISTEMA</span>
+            </div>
           </div>
+
+          <nav className="sidebar-nav">
+            <span className="nav-section-title">MENU PRINCIPAL</span>
+            {links.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+                >
+                  <Icon size={18} strokeWidth={2} />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            })}
+          </nav>
         </aside>
 
-        {/* MAIN CONTENT */}
-        <main className="main-content">
+        {/* Conteúdo Principal da Aplicação */}
+        <main className="app-main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/vendas" element={<Vendas />} />
@@ -56,6 +72,6 @@ export default function App() {
           </Routes>
         </main>
       </div>
-    </Router>
+    </BrowserRouter>
   )
 }
