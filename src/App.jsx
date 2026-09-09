@@ -5,10 +5,8 @@ import Clientes from './pages/Clientes'
 import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
-import './App.css'
 
-
-// Ícones SVG minimalistas embutidos (sem bibliotecas externas)
+// Ícones SVG minimalistas nativos
 const IconDashboard = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" />
@@ -69,8 +67,28 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {/* Estilos Globais Injetados Diretamente (dispensa qualquer import de arquivo .css) */}
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; color: #0f172a; }
+        .app-layout { display: flex; min-height: 100vh; background-color: #f8fafc; }
+        .app-sidebar { width: 240px; min-width: 240px; background-color: #090d16; border-right: 1px solid #1e293b; display: flex; flex-direction: column; padding: 1.5rem 1rem; }
+        .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 0 0.5rem 1.5rem 0.5rem; border-bottom: 1px solid #1e293b; margin-bottom: 1.5rem; }
+        .brand-badge { width: 36px; height: 36px; background: #2563eb; color: #ffffff; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .brand-name { display: block; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.05em; color: #ffffff; }
+        .brand-sub { display: block; font-size: 0.68rem; color: #64748b; font-weight: 600; }
+        .nav-section-title { display: block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; color: #475569; padding: 0 0.75rem 0.5rem; }
+        .sidebar-link { display: flex; align-items: center; gap: 12px; padding: 0.65rem 0.75rem; border-radius: 8px; color: #94a3b8; text-decoration: none; font-size: 0.88rem; font-weight: 500; transition: all 0.15s ease; margin-bottom: 4px; }
+        .sidebar-link:hover { color: #ffffff; background: #1e293b; }
+        .sidebar-link.active { color: #ffffff; background: #2563eb; }
+        .app-main-content { flex: 1; padding: 2rem; overflow-y: auto; }
+        @media (max-width: 768px) {
+          .app-layout { flex-direction: column; }
+          .app-sidebar { width: 100%; min-width: 100%; min-height: auto; }
+        }
+      `}</style>
+
       <div className="app-layout">
-        {/* Menu Lateral Minimalista Moderno */}
         <aside className="app-sidebar">
           <div className="sidebar-brand">
             <div className="brand-badge">
@@ -100,7 +118,6 @@ export default function App() {
           </nav>
         </aside>
 
-        {/* Conteúdo Principal */}
         <main className="app-main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
