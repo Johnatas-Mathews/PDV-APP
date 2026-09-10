@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
-// Ícones SVG minimalistas nativos
+// Ícones SVG minimalistas nativos (sem dependências externas)
 const IconStore = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
@@ -51,6 +51,20 @@ const IconCheck = () => (
   </svg>
 )
 
+const IconReceipt = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
+  </svg>
+)
+
+const IconPrinter = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect width="12" height="8" x="6" y="14" />
+  </svg>
+)
+
 export default function Vendas() {
   const [produtos, setProdutos] = useState([])
   const [clientes, setClientes] = useState([])
@@ -69,6 +83,11 @@ export default function Vendas() {
 
   const [vendaEditando, setVendaEditando] = useState(null)
   const [itensOriginais, setItensOriginais] = useState([])
+
+  // Modal de Fechamento de Caixa
+  const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
+  const [vendasDoDia, setVendasDoDia] = useState([])
+  const [carregandoCaixa, setCarregandoCaixa] = useState(false)
 
   const carregarDados = async () => {
     const { data: prodData } = await supabase
@@ -95,6 +114,49 @@ export default function Vendas() {
   useEffect(() => {
     carregarDados()
   }, [])
+
+  // Carrega vendas apenas do dia de hoje para o fechamento
+  const abrirFechamentoCaixa = async () => {
+    setCarregandoCaixa(true)
+    setModalCaixaAberto(true)
+
+    const hoje = new Date()
+    hoje.setHours(0, 0, 0, 0)
+
+    const { data, error } = await supabase
+      .from('vendas')
+      .select('*, clientes(nome)')
+      .gte('created_at', hoje.toISOString())
+      .order('created_at', { ascending: true })
+
+    if (!error && data) {
+      setVendasDoDia(data)
+    }
+    setCarregandoCaixa(false)
+  }
+
+  // Cálculos do Caixa do Dia
+  const resumoTotais = vendasDoDia.reduce((acc, v) => {
+    const total = Number(v.total || 0)
+    acc.totalGeral += total
+    acc.qtdPedidos += 1
+
+    if (v.forma_pagamento === 'dinheiro') acc.dinheiro += total
+    else if (v.forma_pagamento === 'pix') acc.pix += total
+    else if (v.forma_pagamento === 'debito') acc.debito += total
+    else if (v.forma_pagamento === 'credito') acc.credito += total
+    else if (v.forma_pagamento === 'crediario') acc.crediario += total
+
+    return acc
+  }, {
+    totalGeral: 0,
+    qtdPedidos: 0,
+    dinheiro: 0,
+    pix: 0,
+    debito: 0,
+    credito: 0,
+    crediario: 0
+  })
 
   const adicionarItem = () => {
     if (!produtoSelecionado || !quantidade) {
@@ -182,13 +244,11 @@ export default function Vendas() {
   const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
   const totalComDesconto = Math.max(0, subtotal - (parseFloat(desconto) || 0))
   
-  // Cálculos de Dinheiro e Troco
   const numValorRecebido = parseFloat(valorRecebido) || 0
   const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto 
     ? numValorRecebido - totalComDesconto 
     : 0
 
-  // Cálculos de Crediário com Entrada
   const numValorEntrada = parseFloat(valorEntrada) || 0
   const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
@@ -268,7 +328,6 @@ export default function Vendas() {
 
     try {
       if (vendaEditando) {
-        // Rebalanceamento de Estoque
         const mapaOriginal = {}
         itensOriginais.forEach(i => {
           mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade
@@ -362,7 +421,6 @@ export default function Vendas() {
         cancelarEdicao()
 
       } else {
-        // Nova Venda
         const { data: vendaCriada, error: erroVenda } = await supabase
           .from('vendas')
           .insert([
@@ -378,7 +436,6 @@ export default function Vendas() {
 
         if (erroVenda) throw erroVenda
 
-        // Crediário com abatimento de entrada
         if (formaPagamento === 'crediario') {
           const dataVencimento = new Date()
           dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -395,7 +452,6 @@ export default function Vendas() {
           ])
         }
 
-        // Baixa regular do estoque
         for (const item of itensVenda) {
           const prodOriginal = produtos.find(p => p.id === item.produtoId)
           if (prodOriginal) {
@@ -439,7 +495,7 @@ export default function Vendas() {
     <div className="vendas-wrapper">
       <style>{`
         .vendas-wrapper { max-width: 1200px; margin: 0 auto; }
-        .page-header { margin-bottom: 1.5rem; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 13px; margin: 4px 0 0 0; font-weight: 500; display: flex; align-items: center; gap: 6px; }
         .form-container, .table-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
@@ -459,6 +515,8 @@ export default function Vendas() {
         .btn-danger:hover { background: #fecaca; }
         .btn-secondary { background: #f1f5f9; color: #475569; }
         .btn-secondary:hover { background: #e2e8f0; color: #0f172a; }
+        .btn-outline-dark { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
+        .btn-outline-dark:hover { background: #f8fafc; border-color: #94a3b8; }
         .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
         .btn-lg { padding: 0.85rem 1.75rem; font-size: 1.05rem; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -472,18 +530,43 @@ export default function Vendas() {
         .total-info { display: flex; align-items: baseline; gap: 0.5rem; }
         .total-info span:first-child { font-size: 1rem; color: #64748b; font-weight: 500; }
         .total-value { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.03em; color: #2563eb; }
+
+        /* Estilos do Modal de Fechamento */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
+        .modal-sheet { background: #ffffff; width: 100%; max-width: 580px; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+        .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
+        .modal-heading { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
+        .modal-sub { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
+        .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.25rem; }
+        .kpi-mini { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
+        .kpi-mini-title { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .kpi-mini-val { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
+        .caixa-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 6px; font-size: 0.9rem; }
+        .caixa-gaveta { background: #ecfdf5; border: 1px solid #a7f3d0; }
         @media (max-width: 768px) {
           .form-row { flex-direction: column; gap: 0.75rem; }
+          .kpi-row { grid-template-columns: 1fr; }
         }
       `}</style>
 
       <div className="page-header">
-        <h1 className="page-title">
-          {vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}
-        </h1>
-        <p className="page-subtitle">
-          <IconStore /> {DADOS_EMPRESA.nome}
-        </p>
+        <div>
+          <h1 className="page-title">
+            {vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}
+          </h1>
+          <p className="page-subtitle">
+            <IconStore /> {DADOS_EMPRESA.nome}
+          </p>
+        </div>
+
+        {/* Botão de Fechamento de Caixa */}
+        <button 
+          className="btn btn-outline-dark" 
+          onClick={abrirFechamentoCaixa}
+          style={{ gap: '8px' }}
+        >
+          <IconReceipt /> Resumo do Dia (Caixa)
+        </button>
       </div>
 
       {vendaEditando && (
@@ -769,6 +852,113 @@ export default function Vendas() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* MODAL DE RESUMO E FECHAMENTO DO DIA */}
+      {modalCaixaAberto && (
+        <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-top">
+              <div>
+                <h3 className="modal-heading">Fechamento do Dia</h3>
+                <p className="modal-sub">
+                  {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+              <button 
+                onClick={() => setModalCaixaAberto(false)} 
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {carregandoCaixa ? (
+              <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>Calculando movimentações de hoje...</p>
+            ) : (
+              <>
+                <div className="kpi-row">
+                  <div className="kpi-mini">
+                    <span className="kpi-mini-title">Total Faturado Hoje</span>
+                    <span className="kpi-mini-val" style={{ color: '#2563eb' }}>
+                      R$ {resumoTotais.totalGeral.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="kpi-mini">
+                    <span className="kpi-mini-title">Vendas Concluídas</span>
+                    <span className="kpi-mini-val">
+                      {resumoTotais.qtdPedidos} {resumoTotais.qtdPedidos === 1 ? 'pedido' : 'pedidos'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>
+                    Conferência por Meio de Pagamento
+                  </span>
+
+                  {/* Dinheiro (Destaque para gaveta física) */}
+                  <div className="caixa-item caixa-gaveta">
+                    <div>
+                      <strong style={{ color: '#047857', display: 'block' }}>💵 Dinheiro em Gaveta</strong>
+                      <span style={{ fontSize: '0.75rem', color: '#065f46' }}>Saldo físico em cédulas/moedas</span>
+                    </div>
+                    <strong style={{ color: '#047857', fontSize: '1.1rem' }}>
+                      R$ {resumoTotais.dinheiro.toFixed(2)}
+                    </strong>
+                  </div>
+
+                  {/* PIX */}
+                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <span>⚡ PIX</span>
+                    <strong>R$ {resumoTotais.pix.toFixed(2)}</strong>
+                  </div>
+
+                  {/* Débito */}
+                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <span>💳 Cartão de Débito</span>
+                    <strong>R$ {resumoTotais.debito.toFixed(2)}</strong>
+                  </div>
+
+                  {/* Crédito */}
+                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <span>💳 Cartão de Crédito</span>
+                    <strong>R$ {resumoTotais.credito.toFixed(2)}</strong>
+                  </div>
+
+                  {/* Crediário */}
+                  <div className="caixa-item" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
+                    <div>
+                      <strong style={{ color: '#b45309', display: 'block' }}>📝 Crediário (A Prazo)</strong>
+                      <span style={{ fontSize: '0.75rem', color: '#92400e' }}>Lançado em Contas a Receber</span>
+                    </div>
+                    <strong style={{ color: '#b45309' }}>
+                      R$ {resumoTotais.crediario.toFixed(2)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={() => window.print()}
+                    style={{ gap: '6px' }}
+                  >
+                    <IconPrinter /> Imprimir Relatório
+                  </button>
+
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={() => setModalCaixaAberto(false)}
+                  >
+                    Fechar Conferência
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
