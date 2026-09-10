@@ -1,189 +1,139 @@
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+// Utilitário de geração e impressão de comprovante térmico/A4 sem bibliotecas pesadas
 
-// Altere os dados da sua loja aqui:
 export const DADOS_EMPRESA = {
-  nome: 'TECCO',
-  subtitulo: 'MODA MASCULINA',
-  contato: 'Tel/WhatsApp: (87) 99995-1762'
+  nome: 'TECCO MODA & ESTILO',
+  documento: 'CNPJ: 00.000.000/0001-00',
+  endereco: 'Rua do Comércio, 100 - Centro',
+  telefone: '(11) 99999-9999'
 }
 
 export const formatarIdVenda = (id) => {
-  const ano = new Date().getFullYear()
-  return `VEN-${ano}-${String(id || 0).padStart(6, '0')}`
-}
-
-export const formatarIdRecibo = (id) => {
-  const ano = new Date().getFullYear()
-  return `REC-${ano}-${String(id || 0).padStart(6, '0')}`
+  return String(id || 0).padStart(5, '0')
 }
 
 export const gerarComprovanteVenda = (venda) => {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  })
-
-  const codigoVenda = formatarIdVenda(venda.id)
-  const dataVenda = venda.created_at
-    ? new Date(venda.created_at).toLocaleString('pt-BR')
-    : new Date().toLocaleString('pt-BR')
-
-  // Cabeçalho da Loja
-  doc.setFontSize(16)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(31, 41, 55)
-  doc.text(DADOS_EMPRESA.nome.toUpperCase(), 14, 18)
-
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(107, 114, 128)
-  doc.text(`${DADOS_EMPRESA.subtitulo} • ${DADOS_EMPRESA.contato}`, 14, 23)
-
-  // Identificação do Documento
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(37, 99, 235)
-  doc.text('COMPROVANTE DE VENDA', 14, 31)
-
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(107, 114, 128)
-  doc.text(`Identificador: ${codigoVenda}  |  Data/Hora: ${dataVenda}`, 14, 36)
-
-  // Linha divisória
-  doc.setDrawColor(229, 231, 235)
-  doc.setLineWidth(0.5)
-  doc.line(14, 40, 196, 40)
-
-  // Informações do Cliente e Pagamento
-  doc.setFontSize(10)
-  doc.setTextColor(55, 65, 81)
-  const nomeCliente = venda.clientes?.nome || venda.cliente || 'Cliente Avulso'
-  doc.text(`Cliente: ${nomeCliente}`, 14, 47)
-  doc.text(`Forma de Pagamento: ${(venda.forma_pagamento || venda.pagamento || 'DINHEIRO').toUpperCase()}`, 14, 53)
-
-  // Tabela de Produtos
+  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
+  const codVenda = formatarIdVenda(venda.id)
   const itens = Array.isArray(venda.itens) ? venda.itens : []
-  const linhasTabela = itens.map((item, index) => [
-    index + 1,
-    item.nomeProduto || 'Produto',
-    item.quantidade,
-    `R$ ${Number(item.preco).toFixed(2)}`,
-    `R$ ${(Number(item.preco) * Number(item.quantidade)).toFixed(2)}`
-  ])
 
-  autoTable(doc, {
-    startY: 59,
-    head: [['#', 'Descrição do Item', 'Qtd', 'Preço Unit.', 'Subtotal']],
-    body: linhasTabela,
-    theme: 'striped',
-    headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold' },
-    styles: { fontSize: 9, cellPadding: 3 },
-    columnStyles: {
-      0: { halign: 'center', cellWidth: 12 },
-      2: { halign: 'center', cellWidth: 16 },
-      3: { halign: 'right', cellWidth: 28 },
-      4: { halign: 'right', cellWidth: 28 }
-    }
-  })
+  // 1. Soma o valor bruto de todos os produtos
+  const subtotalItens = itens.reduce((acc, item) => {
+    const qtd = Number(item.quantidade || 1)
+    const unit = Number(item.preco || 0)
+    return acc + (qtd * unit)
+  }, 0)
 
-  // Total
-  const posFinalY = (doc).lastAutoTable.finalY + 10
-  const valorTotal = Number(venda.total || 0).toFixed(2)
+  // 2. Total final cobrado na venda
+  const totalCobrado = Number(venda.total || 0)
 
-  doc.setFontSize(13)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(17, 24, 39)
-  doc.text(`VALOR TOTAL: R$ ${valorTotal}`, 196, posFinalY, { align: 'right' })
+  // 3. Diferença apurada como desconto
+  const valorDesconto = Math.max(0, subtotalItens - totalCobrado)
 
-  // Rodapé
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(156, 163, 175)
-  doc.text(`${DADOS_EMPRESA.nome} — Agradecemos a preferência!`, 105, 285, { align: 'center' })
+  // 4. Montagem das linhas da tabela de produtos
+  const linhasItensHtml = itens.map(item => {
+    const qtd = Number(item.quantidade || 1)
+    const unit = Number(item.preco || 0)
+    const subt = qtd * unit
+    return `
+      <tr>
+        <td style="padding: 6px 0; border-bottom: 1px dashed #e2e8f0;">
+          <div style="font-weight: 600; color: #0f172a;">${item.nomeProduto || item.nome || 'Produto'}</div>
+          <div style="font-size: 11px; color: #64748b;">${qtd} un x R$ ${unit.toFixed(2)}</div>
+        </td>
+        <td style="padding: 6px 0; border-bottom: 1px dashed #e2e8f0; text-align: right; font-weight: 600; color: #0f172a; vertical-align: bottom;">
+          R$ ${subt.toFixed(2)}
+        </td>
+      </tr>
+    `
+  }).join('')
 
-  doc.save(`${codigoVenda}.pdf`)
-}
+  // 5. Bloco de totais com exibição de Desconto quando houver
+  const blocoTotaisHtml = `
+    <div style="margin-top: 14px; border-top: 1px solid #0f172a; padding-top: 8px;">
+      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #475569;">
+        <span>Total Produtos:</span>
+        <strong>R$ ${subtotalItens.toFixed(2)}</strong>
+      </div>
 
-export const gerarReciboPagamento = (conta, valorRecebidoAgora) => {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  })
+      ${valorDesconto > 0.01 ? `
+      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #dc2626;">
+        <span>Desconto Concedido:</span>
+        <strong>- R$ ${valorDesconto.toFixed(2)}</strong>
+      </div>
+      ` : ''}
 
-  const codigoRecibo = formatarIdRecibo(conta.id)
-  const dataHoje = new Date().toLocaleString('pt-BR')
-  const nomeCliente = conta.clientes?.nome || conta.descricao || 'Cliente'
-  const valorTotalOriginal = Number(conta.valor || 0)
-  const valorPagoTotal = Number(conta.valor_pago || 0)
-  const valorRecebidoMomento = Number(valorRecebidoAgora || valorTotalOriginal)
-  const saldoRestante = Math.max(0, valorTotalOriginal - valorPagoTotal)
+      <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">
+        <span>TOTAL FINAL:</span>
+        <span>R$ ${totalCobrado.toFixed(2)}</span>
+      </div>
+    </div>
+  `
 
-  // Cabeçalho da Loja
-  doc.setFontSize(16)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(31, 41, 55)
-  doc.text(DADOS_EMPRESA.nome.toUpperCase(), 14, 18)
+  // 6. Janela de impressão direta sem travar na Vercel
+  const janela = window.open('', '_blank', 'width=380,height=600')
+  if (!janela) {
+    alert('Por favor, permita pop-ups no seu navegador para imprimir o comprovante.')
+    return
+  }
 
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(107, 114, 128)
-  doc.text(`${DADOS_EMPRESA.subtitulo} • ${DADOS_EMPRESA.contato}`, 14, 23)
+  janela.document.write(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>Comprovante #${codVenda}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; }
+          body { background: #ffffff; padding: 20px; color: #0f172a; }
+          .cupom { width: 100%; max-width: 320px; margin: 0 auto; }
+          .header { text-align: center; border-bottom: 1px dashed #94a3b8; padding-bottom: 12px; margin-bottom: 12px; }
+          .title { font-size: 16px; font-weight: 800; letter-spacing: 0.02em; }
+          .sub { font-size: 11px; color: #64748b; margin-top: 3px; }
+          .meta { font-size: 11px; color: #334155; margin-bottom: 12px; }
+          .meta div { margin-bottom: 2px; }
+          table { width: 100%; border-collapse: collapse; }
+          .footer { text-align: center; font-size: 11px; color: #64748b; border-top: 1px dashed #94a3b8; margin-top: 16px; padding-top: 12px; }
+          @media print {
+            body { padding: 0; }
+            .cupom { max-width: 100%; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="cupom">
+          <div class="header">
+            <div class="title">${DADOS_EMPRESA.nome}</div>
+            <div class="sub">${DADOS_EMPRESA.documento}</div>
+            <div class="sub">${DADOS_EMPRESA.endereco}</div>
+            <div class="sub">${DADOS_EMPRESA.telefone}</div>
+          </div>
 
-  // Título do Recibo
-  doc.setFontSize(12)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(16, 185, 129)
-  doc.text('RECIBO DE PAGAMENTO / QUITAÇÃO', 14, 31)
+          <div class="meta">
+            <div><strong>PEDIDO: #${codVenda}</strong></div>
+            <div>Data: ${dataVenda}</div>
+            <div>Cliente: ${venda.clientes?.nome || 'Cliente Avulso'}</div>
+            <div>Forma Pagto: ${(venda.forma_pagamento || 'dinheiro').toUpperCase()}</div>
+          </div>
 
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(107, 114, 128)
-  doc.text(`Identificador: ${codigoRecibo}  |  Emitido em: ${dataHoje}`, 14, 36)
+          <table>
+            ${linhasItensHtml}
+          </table>
 
-  doc.setDrawColor(229, 231, 235)
-  doc.setLineWidth(0.5)
-  doc.line(14, 40, 196, 40)
+          ${blocoTotaisHtml}
 
-  // Dados do Pagador
-  doc.setFontSize(10)
-  doc.setTextColor(55, 65, 81)
-  const tipoQuitacao = saldoRestante <= 0.009 ? 'QUITAÇÃO TOTAL' : 'AMORTIZAÇÃO PARCIAL'
-  
-  doc.text(`Operação: ${tipoQuitacao}`, 14, 48)
-  doc.text(`Recebemos de: ${nomeCliente}`, 14, 55)
-  doc.text(`A quantia de: R$ ${valorRecebidoMomento.toFixed(2)}`, 14, 62)
-  doc.text(`Referente a: ${conta.descricao || 'Título financeiro em aberto'}`, 14, 69)
+          <div class="footer">
+            <p>Obrigado pela preferência!</p>
+            <p style="margin-top: 4px; font-size: 10px;">Conserve este comprovante</p>
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+    </html>
+  `)
 
-  // Tabela Demonstrativa
-  autoTable(doc, {
-    startY: 77,
-    head: [['Demonstrativo do Título', 'Valores']],
-    body: [
-      ['Valor Original da Dívida', `R$ ${valorTotalOriginal.toFixed(2)}`],
-      ['Valor Pago Neste Recibo', `R$ ${valorRecebidoMomento.toFixed(2)}`],
-      ['Total Acumulado Quitado', `R$ ${valorPagoTotal.toFixed(2)}`],
-      ['Saldo Devedor Restante', `R$ ${saldoRestante.toFixed(2)}`]
-    ],
-    theme: 'grid',
-    headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontStyle: 'bold' },
-    styles: { fontSize: 10, cellPadding: 4 },
-    columnStyles: {
-      1: { halign: 'right', fontStyle: 'bold' }
-    }
-  })
-
-  // Campo para Assinatura
-  const posAssinaturaY = (doc).lastAutoTable.finalY + 35
-  doc.setDrawColor(156, 163, 175)
-  doc.line(60, posAssinaturaY, 150, posAssinaturaY)
-  doc.setFontSize(9)
-  doc.setTextColor(107, 114, 128)
-  doc.text(DADOS_EMPRESA.nome, 105, posAssinaturaY + 5, { align: 'center' })
-  doc.text('Assinatura do Emitente', 105, posAssinaturaY + 10, { align: 'center' })
-
-  doc.save(`${codigoRecibo}.pdf`)
+  janela.document.close()
 }
