@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
-// Ícones SVG minimalistas nativos (sem dependências externas)
+// Ícones SVG minimalistas nativos
 const IconStore = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
@@ -57,11 +57,9 @@ const IconReceipt = () => (
   </svg>
 )
 
-const IconPrinter = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 9 6 2 18 2 18 9" />
-    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-    <rect width="12" height="8" x="6" y="14" />
+const IconSparkles = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
   </svg>
 )
 
@@ -69,6 +67,7 @@ export default function Vendas() {
   const [produtos, setProdutos] = useState([])
   const [clientes, setClientes] = useState([])
   const [vendas, setVendas] = useState([])
+  const [taxaCashback, setTaxaCashback] = useState(5) // Porcentagem padrão
   
   const [clienteSelecionado, setClienteSelecionado] = useState('')
   const [produtoSelecionado, setProdutoSelecionado] = useState('')
@@ -78,44 +77,58 @@ export default function Vendas() {
   const [valorEntrada, setValorEntrada] = useState('')
   
   const [desconto, setDesconto] = useState(0)
+  const [usarCashback, setUsarCashback] = useState(false)
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
   const [vendaEditando, setVendaEditando] = useState(null)
   const [itensOriginais, setItensOriginais] = useState([])
 
-  // Modal de Fechamento de Caixa
+  // Modal de Caixa
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [vendasDoDia, setVendasDoDia] = useState([])
   const [carregandoCaixa, setCarregandoCaixa] = useState(false)
 
   const carregarDados = async () => {
-    const { data: prodData } = await supabase
-      .from('produtos')
-      .select('*')
-      .order('nome')
-
-    const { data: cliData } = await supabase
-      .from('clientes')
-      .select('*')
-      .order('nome')
-
-    const { data: venData } = await supabase
-      .from('vendas')
-      .select('*, clientes(nome, telefone)')
-      .order('id', { ascending: false })
-      .limit(10)
+    const { data: prodData } = await supabase.from('produtos').select('*').order('nome')
+    const { data: cliData } = await supabase.from('clientes').select('*').order('nome')
+    const { data: venData } = await supabase.from('vendas').select('*, clientes(nome, telefone, saldo_cashback)').order('id', { ascending: false }).limit(10)
+    
+    // Busca a taxa de cashback configurada
+    const { data: cfgData } = await supabase.from('configuracoes').select('valor').eq('chave', 'cashback_percentual').maybeSingle()
 
     if (prodData) setProdutos(prodData)
     if (cliData) setClientes(cliData)
     if (venData) setVendas(venData)
+    if (cfgData) setTaxaCashback(parseFloat(cfgData.valor) || 0)
   }
 
   useEffect(() => {
     carregarDados()
   }, [])
 
-  // Carrega vendas apenas do dia de hoje para o fechamento
+  // Cliente selecionado atualmente
+  const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
+  const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
+
+  // Totais e Descontos
+  const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
+  const descontoManual = parseFloat(desconto) || 0
+  const valorAbatidoCashback = usarCashback ? Math.min(subtotal - descontoManual, saldoCashbackDisponivel) : 0
+  const totalComDesconto = Math.max(0, subtotal - descontoManual - valorAbatidoCashback)
+  
+  // Novo cashback que esta compra vai gerar
+  const novoCashbackGerado = (totalComDesconto * (taxaCashback / 100))
+
+  const numValorRecebido = parseFloat(valorRecebido) || 0
+  const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto 
+    ? numValorRecebido - totalComDesconto 
+    : 0
+
+  const numValorEntrada = parseFloat(valorEntrada) || 0
+  const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
+
+  // Fechamento de caixa
   const abrirFechamentoCaixa = async () => {
     setCarregandoCaixa(true)
     setModalCaixaAberto(true)
@@ -135,28 +148,17 @@ export default function Vendas() {
     setCarregandoCaixa(false)
   }
 
-  // Cálculos do Caixa do Dia
   const resumoTotais = vendasDoDia.reduce((acc, v) => {
     const total = Number(v.total || 0)
     acc.totalGeral += total
     acc.qtdPedidos += 1
-
     if (v.forma_pagamento === 'dinheiro') acc.dinheiro += total
     else if (v.forma_pagamento === 'pix') acc.pix += total
     else if (v.forma_pagamento === 'debito') acc.debito += total
     else if (v.forma_pagamento === 'credito') acc.credito += total
     else if (v.forma_pagamento === 'crediario') acc.crediario += total
-
     return acc
-  }, {
-    totalGeral: 0,
-    qtdPedidos: 0,
-    dinheiro: 0,
-    pix: 0,
-    debito: 0,
-    credito: 0,
-    crediario: 0
-  })
+  }, { totalGeral: 0, qtdPedidos: 0, dinheiro: 0, pix: 0, debito: 0, credito: 0, crediario: 0 })
 
   const adicionarItem = () => {
     if (!produtoSelecionado || !quantidade) {
@@ -180,18 +182,14 @@ export default function Vendas() {
     const estoqueDisponivelReal = produto.estoque + (itemOriginal ? itemOriginal.quantidade : 0)
 
     if (estoqueDisponivelReal < qtdTotalPretendida) {
-      alert(`Estoque insuficiente! Disponível no estoque: ${estoqueDisponivelReal} unidades.`)
+      alert(`Estoque insuficiente! Disponível: ${estoqueDisponivelReal} unidades.`)
       return
     }
 
     if (itemExistente) {
       setItensVenda(itensVenda.map(item => 
         item.produtoId === produto.id 
-          ? { 
-              ...item, 
-              quantidade: item.quantidade + qtd,
-              subtotal: (item.quantidade + qtd) * item.preco
-            }
+          ? { ...item, quantidade: item.quantidade + qtd, subtotal: (item.quantidade + qtd) * item.preco }
           : item
       ))
     } else {
@@ -216,7 +214,6 @@ export default function Vendas() {
       if (item.id === id) {
         const produto = produtos.find(p => p.id === item.produtoId)
         const novaQtd = item.quantidade + delta
-
         if (novaQtd <= 0) return null
 
         const itemOriginal = itensOriginais.find(i => i.produtoId === item.produtoId)
@@ -227,11 +224,7 @@ export default function Vendas() {
           return item
         }
 
-        return {
-          ...item,
-          quantidade: novaQtd,
-          subtotal: novaQtd * item.preco
-        }
+        return { ...item, quantidade: novaQtd, subtotal: novaQtd * item.preco }
       }
       return item
     }).filter(Boolean))
@@ -240,17 +233,6 @@ export default function Vendas() {
   const removerItem = (id) => {
     setItensVenda(itensVenda.filter(item => item.id !== id))
   }
-
-  const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
-  const totalComDesconto = Math.max(0, subtotal - (parseFloat(desconto) || 0))
-  
-  const numValorRecebido = parseFloat(valorRecebido) || 0
-  const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto 
-    ? numValorRecebido - totalComDesconto 
-    : 0
-
-  const numValorEntrada = parseFloat(valorEntrada) || 0
-  const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
   const iniciarEdicao = (venda) => {
     setVendaEditando(venda)
@@ -264,6 +246,7 @@ export default function Vendas() {
     const somaItens = itensClonados.reduce((s, i) => s + (Number(i.subtotal) || 0), 0)
     const descOriginal = Math.max(0, somaItens - Number(venda.total || 0))
     setDesconto(descOriginal)
+    setUsarCashback(false)
 
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -276,10 +259,11 @@ export default function Vendas() {
     setFormaPagamento('dinheiro')
     setValorEntrada('')
     setDesconto(0)
+    setUsarCashback(false)
     setValorRecebido('')
   }
 
-  const enviarComprovanteWhatsApp = (codigoVenda, nomeCli, telCli, totalVenda) => {
+  const enviarComprovanteWhatsApp = (codigoVenda, nomeCli, telCli, totalVenda, novoSaldoCli, cashbackGanho) => {
     if (!telCli) {
       alert('Este cliente não possui telefone cadastrado!')
       return
@@ -288,12 +272,18 @@ export default function Vendas() {
     const numLimpo = telCli.replace(/\D/g, '')
     const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
 
+    let txtCashback = ''
+    if (cashbackGanho > 0) {
+      txtCashback = `\n🎁 *Você ganhou R$ ${cashbackGanho.toFixed(2)} de Cashback!*\nSeu saldo acumulado agora é: *R$ ${novoSaldoCli.toFixed(2)}* para usar na próxima compra.\n`
+    }
+
     const mensagem = encodeURIComponent(
       `Olá, ${nomeCli}!\n` +
-      `Obrigado por comprar conosco!\n\n` +
+      `Obrigado por comprar conosco no *${DADOS_EMPRESA.nome}*!\n\n` +
       `Pedido: *${codigoVenda}*\n` +
-      `Total: *R$ ${Number(totalVenda).toFixed(2)}*\n\n` +
-      `Qualquer dúvida, estamos à disposição!`
+      `Total Pago: *R$ ${Number(totalVenda).toFixed(2)}*\n` +
+      txtCashback +
+      `\nQualquer dúvida, estamos à disposição!`
     )
 
     window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
@@ -306,7 +296,7 @@ export default function Vendas() {
     }
 
     if (formaPagamento === 'crediario' && !clienteSelecionado) {
-      alert('Atenção: Para registrar venda no Crediário / A Prazo, selecione um cliente cadastrado.')
+      alert('Atenção: Para registrar venda no Crediário, selecione um cliente cadastrado.')
       return
     }
 
@@ -322,158 +312,94 @@ export default function Vendas() {
 
     setSalvando(true)
     const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
-    const clienteObj = clientes.find(c => c.id === clienteId)
-    const nomeCliente = clienteObj ? clienteObj.nome : 'Cliente Avulso'
-    const telefoneCliente = clienteObj ? clienteObj.telefone : null
+    const nomeCliente = clienteAtual ? clienteAtual.nome : 'Cliente Avulso'
+    const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
 
     try {
       if (vendaEditando) {
+        // Modo Edição
         const mapaOriginal = {}
-        itensOriginais.forEach(i => {
-          mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade
-        })
-
+        itensOriginais.forEach(i => { mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade })
         const mapaNovo = {}
-        itensVenda.forEach(i => {
-          mapaNovo[i.produtoId] = (mapaNovo[i.produtoId] || 0) + i.quantidade
-        })
+        itensVenda.forEach(i => { mapaNovo[i.produtoId] = (mapaNovo[i.produtoId] || 0) + i.quantidade })
 
         const todosProdutoIds = Array.from(new Set([...Object.keys(mapaOriginal), ...Object.keys(mapaNovo)]))
-
         for (const prodIdStr of todosProdutoIds) {
           const prodId = parseInt(prodIdStr)
-          const qtdAntiga = mapaOriginal[prodId] || 0
-          const qtdNova = mapaNovo[prodId] || 0
-          const diferenca = qtdNova - qtdAntiga
-
+          const diferenca = (mapaNovo[prodId] || 0) - (mapaOriginal[prodId] || 0)
           if (diferenca !== 0) {
             const prodAtual = produtos.find(p => p.id === prodId)
             if (prodAtual) {
-              const novoEstoque = Math.max(0, (prodAtual.estoque || 0) - diferenca)
-              await supabase
-                .from('produtos')
-                .update({ estoque: novoEstoque })
-                .eq('id', prodId)
+              await supabase.from('produtos').update({ estoque: Math.max(0, (prodAtual.estoque || 0) - diferenca) }).eq('id', prodId)
             }
           }
         }
 
         const { error: erroUpdate } = await supabase
           .from('vendas')
-          .update({
-            total: totalComDesconto,
-            forma_pagamento: formaPagamento,
-            itens: itensVenda,
-            cliente_id: clienteId
-          })
+          .update({ total: totalComDesconto, forma_pagamento: formaPagamento, itens: itensVenda, cliente_id: clienteId })
           .eq('id', vendaEditando.id)
 
         if (erroUpdate) throw erroUpdate
-
-        if (formaPagamento === 'crediario') {
-          const dataVencimento = new Date()
-          dataVencimento.setDate(dataVencimento.getDate() + 30)
-
-          const { data: contaExistente } = await supabase
-            .from('contas_a_receber')
-            .select('id')
-            .like('descricao', `Venda #${vendaEditando.id}%`)
-            .maybeSingle()
-
-          if (contaExistente) {
-            await supabase
-              .from('contas_a_receber')
-              .update({
-                valor: totalComDesconto,
-                valor_pago: numValorEntrada,
-                cliente_id: clienteId,
-                status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
-                descricao: `Venda #${vendaEditando.id} - ${nomeCliente}`
-              })
-              .eq('id', contaExistente.id)
-          } else {
-            await supabase.from('contas_a_receber').insert([
-              {
-                descricao: `Venda #${vendaEditando.id} - ${nomeCliente}`,
-                valor: totalComDesconto,
-                valor_pago: numValorEntrada,
-                vencimento: dataVencimento.toISOString().split('T')[0],
-                status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
-                cliente_id: clienteId
-              }
-            ])
-          }
-        }
-
-        const codFormatado = formatarIdVenda(vendaEditando.id)
-        alert(`Venda ${codFormatado} atualizada com sucesso!`)
-
-        if (confirm('Deseja emitir o comprovante PDF atualizado?')) {
-          gerarComprovanteVenda({
-            ...vendaEditando,
-            total: totalComDesconto,
-            forma_pagamento: formaPagamento,
-            itens: itensVenda,
-            clientes: { nome: nomeCliente }
-          })
-        }
-
+        alert('Venda atualizada com sucesso!')
         cancelarEdicao()
 
       } else {
+        // Nova Venda
         const { data: vendaCriada, error: erroVenda } = await supabase
           .from('vendas')
-          .insert([
-            {
-              total: totalComDesconto,
-              forma_pagamento: formaPagamento,
-              itens: itensVenda,
-              cliente_id: clienteId
-            }
-          ])
+          .insert([{ total: totalComDesconto, forma_pagamento: formaPagamento, itens: itensVenda, cliente_id: clienteId }])
           .select()
           .single()
 
         if (erroVenda) throw erroVenda
 
+        // Processa Cashback (abate o saldo usado e soma o novo ganho)
+        let saldoFinalCliente = saldoCashbackDisponivel
+        if (clienteId) {
+          if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
+          saldoFinalCliente += novoCashbackGerado
+
+          await supabase
+            .from('clientes')
+            .update({ saldo_cashback: Math.max(0, saldoFinalCliente) })
+            .eq('id', clienteId)
+        }
+
+        // Crediário
         if (formaPagamento === 'crediario') {
           const dataVencimento = new Date()
           dataVencimento.setDate(dataVencimento.getDate() + 30)
 
-          await supabase.from('contas_a_receber').insert([
-            {
-              descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
-              valor: totalComDesconto,
-              valor_pago: numValorEntrada,
-              vencimento: dataVencimento.toISOString().split('T')[0],
-              status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
-              cliente_id: clienteId
-            }
-          ])
+          await supabase.from('contas_a_receber').insert([{
+            descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
+            valor: totalComDesconto,
+            valor_pago: numValorEntrada,
+            vencimento: dataVencimento.toISOString().split('T')[0],
+            status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
+            cliente_id: clienteId
+          }])
         }
 
+        // Baixa regular do estoque
         for (const item of itensVenda) {
           const prodOriginal = produtos.find(p => p.id === item.produtoId)
           if (prodOriginal) {
-            const novoEstoque = Math.max(0, (prodOriginal.estoque || 0) - item.quantidade)
             await supabase
               .from('produtos')
-              .update({ estoque: novoEstoque })
+              .update({ estoque: Math.max(0, (prodOriginal.estoque || 0) - item.quantidade) })
               .eq('id', item.produtoId)
           }
         }
 
         const codFormatado = formatarIdVenda(vendaCriada.id)
 
-        if (confirm(`Venda ${codFormatado} finalizada! Deseja emitir o comprovante em PDF?`)) {
-          gerarComprovanteVenda({
-            ...vendaCriada,
-            clientes: { nome: nomeCliente }
-          })
+        if (confirm(`Venda ${codFormatado} finalizada! Emitir comprovante PDF?`)) {
+          gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } })
         }
 
-        if (telefoneCliente && confirm('Deseja enviar a confirmação da compra pelo WhatsApp do cliente?')) {
-          enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto)
+        if (telefoneCliente && confirm('Enviar confirmação da compra pelo WhatsApp com os dados de Cashback?')) {
+          enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto, saldoFinalCliente, novoCashbackGerado)
         }
 
         setItensVenda([])
@@ -481,6 +407,7 @@ export default function Vendas() {
         setFormaPagamento('dinheiro')
         setValorEntrada('')
         setDesconto(0)
+        setUsarCashback(false)
         setValorRecebido('')
       }
     } catch (err) {
@@ -531,7 +458,11 @@ export default function Vendas() {
         .total-info span:first-child { font-size: 1rem; color: #64748b; font-weight: 500; }
         .total-value { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.03em; color: #2563eb; }
 
-        /* Estilos do Modal de Fechamento */
+        /* Card de Fidelidade / Cashback */
+        .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .badge-tag-cashback { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 700; background: #fef08a; color: #854d0e; }
+
+        /* Modal Fechamento */
         .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
         .modal-sheet { background: #ffffff; width: 100%; max-width: 580px; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
         .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
@@ -559,7 +490,6 @@ export default function Vendas() {
           </p>
         </div>
 
-        {/* Botão de Fechamento de Caixa */}
         <button 
           className="btn btn-outline-dark" 
           onClick={abrirFechamentoCaixa}
@@ -569,28 +499,6 @@ export default function Vendas() {
         </button>
       </div>
 
-      {vendaEditando && (
-        <div style={{ 
-          background: '#fffbeb', 
-          border: '1px solid #fef3c7', 
-          color: '#92400e', 
-          padding: '12px 16px', 
-          borderRadius: '12px', 
-          marginBottom: '1.5rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-        }}>
-          <span style={{ fontSize: '14px' }}>
-            ⚠️ <strong>Modo de Edição Ativo:</strong> Modifique itens, quantidades ou pagamento. O estoque será rebalanceado.
-          </span>
-          <button className="btn btn-sm btn-secondary" onClick={cancelarEdicao}>
-            ✕ Cancelar
-          </button>
-        </div>
-      )}
-
       <div className="form-container">
         <div className="form-section">
           <h2>Dados da Venda</h2>
@@ -598,11 +506,11 @@ export default function Vendas() {
           <div className="form-row">
             <div className="form-group" style={{ flex: 2 }}>
               <label>Cliente</label>
-              <select value={clienteSelecionado} onChange={(e) => setClienteSelecionado(e.target.value)}>
+              <select value={clienteSelecionado} onChange={(e) => { setClienteSelecionado(e.target.value); setUsarCashback(false); }}>
                 <option value="">Cliente Avulso (Não identificado)</option>
                 {clientes.map(c => (
                   <option key={c.id} value={c.id}>
-                    {c.nome} {c.telefone ? `(${c.telefone})` : ''}
+                    {c.nome} {c.saldo_cashback > 0 ? `(Cashback: R$ ${Number(c.saldo_cashback).toFixed(2)})` : ''}
                   </option>
                 ))}
               </select>
@@ -634,6 +542,31 @@ export default function Vendas() {
               </div>
             )}
           </div>
+
+          {/* Card de Cashback disponível para o cliente */}
+          {saldoCashbackDisponivel > 0 && (
+            <div className="cashback-card-alert">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconSparkles />
+                <div>
+                  <strong style={{ color: '#854d0e', fontSize: '0.9rem' }}>
+                    {clienteAtual?.nome} possui R$ {saldoCashbackDisponivel.toFixed(2)} de saldo!
+                  </strong>
+                  <div style={{ fontSize: '0.78rem', color: '#a16207' }}>
+                    {usarCashback ? `Abatendo R$ ${valorAbatidoCashback.toFixed(2)} desta compra` : 'Deseja resgatar o cashback nesta venda?'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={`btn btn-sm ${usarCashback ? 'btn-secondary' : 'btn-primary'}`}
+                onClick={() => setUsarCashback(!usarCashback)}
+              >
+                {usarCashback ? '✕ Não usar agora' : '✨ Usar Saldo'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="form-section">
@@ -719,7 +652,7 @@ export default function Vendas() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>
-                  DESCONTO (R$):
+                  DESCONTO MANUAL (R$):
                 </label>
                 <input 
                   type="number" 
@@ -730,6 +663,20 @@ export default function Vendas() {
                   style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 />
               </div>
+
+              {usarCashback && (
+                <div style={{ background: '#fefce8', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fef08a' }}>
+                  <span style={{ fontSize: '11px', color: '#854d0e', display: 'block', fontWeight: 600 }}>CASHBACK RESGATADO:</span>
+                  <strong style={{ fontSize: '1.1rem', color: '#a16207' }}>- R$ {valorAbatidoCashback.toFixed(2)}</strong>
+                </div>
+              )}
+
+              {clienteAtual && taxaCashback > 0 && (
+                <div style={{ background: '#f0fdf4', padding: '8px 14px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '11px', color: '#15803d', display: 'block', fontWeight: 600 }}>NOVO CASHBACK ({taxaCashback}%):</span>
+                  <strong style={{ fontSize: '1.1rem', color: '#16a34a' }}>+ R$ {novoCashbackGerado.toFixed(2)}</strong>
+                </div>
+              )}
 
               {formaPagamento === 'dinheiro' && (
                 <div>
@@ -742,7 +689,7 @@ export default function Vendas() {
                     placeholder="0,00"
                     value={valorRecebido} 
                     onChange={(e) => setValorRecebido(e.target.value)}
-                    style={{ width: '150px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                    style={{ width: '140px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
                   />
                 </div>
               )}
@@ -764,7 +711,7 @@ export default function Vendas() {
 
             <div className="total-section" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
               <div className="total-info">
-                <span>Total da Venda:</span>
+                <span>Total a Pagar:</span>
                 <span className="total-value">R$ {totalComDesconto.toFixed(2)}</span>
               </div>
               <button 
@@ -785,6 +732,7 @@ export default function Vendas() {
         </div>
       )}
 
+      {/* Tabela de Vendas */}
       {vendas.length > 0 && (
         <div className="table-container">
           <h2>Últimas Vendas Realizadas</h2>
@@ -838,7 +786,7 @@ export default function Vendas() {
                         {tel && (
                           <button 
                             className="btn btn-sm btn-success" 
-                            onClick={() => enviarComprovanteWhatsApp(cod, nome, tel, venda.total)}
+                            onClick={() => enviarComprovanteWhatsApp(cod, nome, tel, venda.total, Number(venda.clientes?.saldo_cashback || 0), 0)}
                             title="Enviar WhatsApp"
                             style={{ gap: '4px' }}
                           >
@@ -855,7 +803,7 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* MODAL DE RESUMO E FECHAMENTO DO DIA */}
+      {/* Modal Fechamento Caixa */}
       {modalCaixaAberto && (
         <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
@@ -881,16 +829,11 @@ export default function Vendas() {
                 <div className="kpi-row">
                   <div className="kpi-mini">
                     <span className="kpi-mini-title">Total Faturado Hoje</span>
-                    <span className="kpi-mini-val" style={{ color: '#2563eb' }}>
-                      R$ {resumoTotais.totalGeral.toFixed(2)}
-                    </span>
+                    <span className="kpi-mini-val" style={{ color: '#2563eb' }}>R$ {resumoTotais.totalGeral.toFixed(2)}</span>
                   </div>
-
                   <div className="kpi-mini">
                     <span className="kpi-mini-title">Vendas Concluídas</span>
-                    <span className="kpi-mini-val">
-                      {resumoTotais.qtdPedidos} {resumoTotais.qtdPedidos === 1 ? 'pedido' : 'pedidos'}
-                    </span>
+                    <span className="kpi-mini-val">{resumoTotais.qtdPedidos} pedidos</span>
                   </div>
                 </div>
 
@@ -898,61 +841,36 @@ export default function Vendas() {
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>
                     Conferência por Meio de Pagamento
                   </span>
-
-                  {/* Dinheiro (Destaque para gaveta física) */}
                   <div className="caixa-item caixa-gaveta">
                     <div>
                       <strong style={{ color: '#047857', display: 'block' }}>💵 Dinheiro em Gaveta</strong>
                       <span style={{ fontSize: '0.75rem', color: '#065f46' }}>Saldo físico em cédulas/moedas</span>
                     </div>
-                    <strong style={{ color: '#047857', fontSize: '1.1rem' }}>
-                      R$ {resumoTotais.dinheiro.toFixed(2)}
-                    </strong>
+                    <strong style={{ color: '#047857', fontSize: '1.1rem' }}>R$ {resumoTotais.dinheiro.toFixed(2)}</strong>
                   </div>
-
-                  {/* PIX */}
                   <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <span>⚡ PIX</span>
                     <strong>R$ {resumoTotais.pix.toFixed(2)}</strong>
                   </div>
-
-                  {/* Débito */}
                   <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <span>💳 Cartão de Débito</span>
                     <strong>R$ {resumoTotais.debito.toFixed(2)}</strong>
                   </div>
-
-                  {/* Crédito */}
                   <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <span>💳 Cartão de Crédito</span>
                     <strong>R$ {resumoTotais.credito.toFixed(2)}</strong>
                   </div>
-
-                  {/* Crediário */}
                   <div className="caixa-item" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
                     <div>
                       <strong style={{ color: '#b45309', display: 'block' }}>📝 Crediário (A Prazo)</strong>
                       <span style={{ fontSize: '0.75rem', color: '#92400e' }}>Lançado em Contas a Receber</span>
                     </div>
-                    <strong style={{ color: '#b45309' }}>
-                      R$ {resumoTotais.crediario.toFixed(2)}
-                    </strong>
+                    <strong style={{ color: '#b45309' }}>R$ {resumoTotais.crediario.toFixed(2)}</strong>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={() => window.print()}
-                    style={{ gap: '6px' }}
-                  >
-                    <IconPrinter /> Imprimir Relatório
-                  </button>
-
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => setModalCaixaAberto(false)}
-                  >
+                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
+                  <button className="btn btn-primary" onClick={() => setModalCaixaAberto(false)}>
                     Fechar Conferência
                   </button>
                 </div>
