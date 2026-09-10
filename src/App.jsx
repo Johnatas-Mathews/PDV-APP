@@ -1,12 +1,13 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
+import Compras from './pages/Compras'
 import Clientes from './pages/Clientes'
 import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
 
-// Ícones SVG minimalistas nativos
+// Ícones SVG minimalistas nativos (sem dependências externas)
 const IconDashboard = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" />
@@ -18,6 +19,12 @@ const IconVendas = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
     <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+  </svg>
+)
+
+const IconCompras = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" /><path d="M15 18H9" /><path d="M19 18h2a1 1 0 0 0 1-1v-5l-4-4h-4v10" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" />
   </svg>
 )
 
@@ -58,16 +65,17 @@ const IconLoja = () => (
 export default function App() {
   const links = [
     { to: '/', label: 'Dashboard', icon: IconDashboard },
-    { to: '/vendas', label: 'Vendas', icon: IconVendas },
-    { to: '/clientes', label: 'Clientes', icon: IconClientes },
+    { to: '/vendas', label: 'Vendas (PDV)', icon: IconVendas },
+    { to: '/compras', label: 'Compras & Reposição', icon: IconCompras },
     { to: '/produtos', label: 'Produtos', icon: IconProdutos },
+    { to: '/clientes', label: 'Clientes', icon: IconClientes },
     { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas },
     { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios },
   ]
 
   return (
     <BrowserRouter>
-      {/* Estilos Globais Injetados Diretamente (dispensa qualquer import de arquivo .css) */}
+      {/* Estilos Globais Injetados sem imports de .css externos */}
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; color: #0f172a; }
@@ -122,6 +130,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/vendas" element={<Vendas />} />
+            <Route path="/compras" element={<Compras />} />
             <Route path="/clientes" element={<Clientes />} />
             <Route path="/produtos" element={<Produtos />} />
             <Route path="/contas-receber" element={<ContasReceber />} />
