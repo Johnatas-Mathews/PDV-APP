@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
 import Compras from './pages/Compras'
 import Clientes from './pages/Clientes'
+import Fornecedores from './pages/Fornecedores'
 import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
@@ -35,6 +36,13 @@ const IconClientes = () => (
   </svg>
 )
 
+const IconFornecedores = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="16" height="20" x="4" y="2" rx="2" />
+    <path d="M9 22v-4h6v4" /><path d="M8 6h.01" /><path d="M16 6h.01" /><path d="M8 10h.01" /><path d="M16 10h.01" /><path d="M8 14h.01" /><path d="M16 14h.01" />
+  </svg>
+)
+
 const IconProdutos = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
@@ -44,7 +52,7 @@ const IconProdutos = () => (
 
 const IconContas = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
     <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
@@ -69,13 +77,13 @@ export default function App() {
     { to: '/compras', label: 'Compras & Reposição', icon: IconCompras },
     { to: '/produtos', label: 'Produtos', icon: IconProdutos },
     { to: '/clientes', label: 'Clientes', icon: IconClientes },
+    { to: '/fornecedores', label: 'Fornecedores', icon: IconFornecedores },
     { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas },
     { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios },
   ]
 
   return (
     <BrowserRouter>
-      {/* Estilos Globais Injetados sem imports de .css externos */}
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; color: #0f172a; }
@@ -131,8 +139,9 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/vendas" element={<Vendas />} />
             <Route path="/compras" element={<Compras />} />
-            <Route path="/clientes" element={<Clientes />} />
             <Route path="/produtos" element={<Produtos />} />
+            <Route path="/clientes" element={<Clientes />} />
+            <Route path="/fornecedores" element={<Fornecedores />} />
             <Route path="/contas-receber" element={<ContasReceber />} />
             <Route path="/relatorios" element={<Relatorios />} />
           </Routes>
