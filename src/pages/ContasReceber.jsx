@@ -37,26 +37,37 @@ export default function ContasReceber() {
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
-  const [contaModal, setContaModal] = useState(null)
+  
+  // Modais
+  const [contaModalHist, setContaModalHist] = useState(null)
+  const [contaModalReceber, setContaModalReceber] = useState(null)
+  const [valorReceberInput, setValorReceberInput] = useState('')
+  const [salvandoRecebimento, setSalvandoRecebimento] = useState(false)
 
   const carregarContas = async () => {
     setLoading(true)
-    let query = supabase
-      .from('contas_a_receber')
-      .select('*, clientes(nome, telefone)')
-      .order('vencimento', { ascending: true })
+    try {
+      let query = supabase
+        .from('contas_a_receber')
+        .select('*, clientes(nome, telefone)')
+        .order('vencimento', { ascending: true })
 
-    if (filtro !== 'todas') {
-      query = query.eq('status', filtro)
-    }
-
-    const { data, error } = await query
-    if (!error && data) {
-      setContas(data)
-      if (contaModal) {
-        const atualizada = data.find(c => c.id === contaModal.id)
-        if (atualizada) setContaModal(atualizada)
+      if (filtro !== 'todas') {
+        query = query.eq('status', filtro)
       }
+
+      const { data, error } = await query
+      if (error) throw error
+
+      if (data) {
+        setContas(data)
+        if (contaModalHist) {
+          const atualizada = data.find(c => c.id === contaModalHist.id)
+          if (atualizada) setContaModalHist(atualizada)
+        }
+      }
+    } catch (err) {
+      alert('Erro ao carregar contas: ' + err.message)
     }
     setLoading(false)
   }
@@ -65,62 +76,75 @@ export default function ContasReceber() {
     carregarContas()
   }, [filtro])
 
-  // Registrar um novo pagamento parcial/total
-  const registrarNovoPagamento = async (conta) => {
+  // Abre modal de recebimento com saldo restante pré-preenchido
+  const abrirModalRecebimento = (conta) => {
     const total = Number(conta.valor || 0)
-    const pagoAteAgora = Number(conta.valor_pago || 0)
+    const pago = Number(conta.valor_pago || 0)
+    const restante = Math.max(0, total - pago)
+    setContaModalReceber(conta)
+    setValorReceberInput(restante.toFixed(2))
+  }
+
+  // Executa a baixa com tratamento seguro para dados legados
+  const confirmarRecebimento = async () => {
+    if (!contaModalReceber) return
+
+    const total = Number(contaModalReceber.valor || 0)
+    const pagoAteAgora = Number(contaModalReceber.valor_pago || 0)
     const saldoRestante = Math.max(0, total - pagoAteAgora)
 
-    const valorInformado = prompt(
-      `Recebimento de: ${conta.clientes?.nome || 'Cliente'}\n` +
-      `Saldo Restante: R$ ${saldoRestante.toFixed(2)}\n\n` +
-      `Quanto o cliente está pagando agora?`,
-      saldoRestante.toFixed(2)
-    )
-
-    if (valorInformado === null) return
-
-    const numRecebido = parseFloat(valorInformado.replace(',', '.'))
+    const numRecebido = parseFloat(String(valorReceberInput).replace(',', '.'))
     if (isNaN(numRecebido) || numRecebido <= 0) {
-      alert('Informe um valor válido.')
+      alert('Informe um valor de pagamento válido.')
       return
     }
 
-    if (numRecebido > saldoRestante) {
-      alert(`Valor maior que a dívida restante (R$ ${saldoRestante.toFixed(2)})!`)
+    if (numRecebido > (saldoRestante + 0.01)) {
+      alert(`O valor informado (R$ ${numRecebido.toFixed(2)}) é maior que a dívida restante (R$ ${saldoRestante.toFixed(2)})!`)
       return
     }
 
-    const novoHistorico = Array.isArray(conta.historico_pagamentos) ? [...conta.historico_pagamentos] : []
-    novoHistorico.push({
+    setSalvandoRecebimento(true)
+
+    const historicoAtual = Array.isArray(contaModalReceber.historico_pagamentos) 
+      ? [...contaModalReceber.historico_pagamentos] 
+      : []
+
+    historicoAtual.push({
       id: Date.now(),
       data: new Date().toISOString(),
       valor: numRecebido
     })
 
-    const novoTotalPago = novoHistorico.reduce((acc, h) => acc + Number(h.valor || 0), 0)
-    const novoStatus = novoTotalPago >= total ? 'pago' : 'pendente'
+    const novoTotalPago = pagoAteAgora + numRecebido
+    const novoStatus = novoTotalPago >= (total - 0.01) ? 'pago' : 'pendente'
 
-    const { error } = await supabase
-      .from('contas_a_receber')
-      .update({
-        valor_pago: novoTotalPago,
-        historico_pagamentos: novoHistorico,
-        status: novoStatus
-      })
-      .eq('id', conta.id)
+    try {
+      const { error } = await supabase
+        .from('contas_a_receber')
+        .update({
+          valor_pago: novoTotalPago,
+          historico_pagamentos: historicoAtual,
+          status: novoStatus
+        })
+        .eq('id', contaModalReceber.id)
 
-    if (error) {
-      alert('Erro: ' + error.message)
-    } else {
-      carregarContas()
+      if (error) throw error
+
+      alert(novoStatus === 'pago' ? 'Conta liquidada com sucesso!' : 'Pagamento parcial registrado!')
+      setContaModalReceber(null)
+      setValorReceberInput('')
+      await carregarContas()
+    } catch (err) {
+      alert('Falha ao registrar pagamento: ' + err.message)
     }
+
+    setSalvandoRecebimento(false)
   }
 
-  // Editar um pagamento do histórico
   const editarPagamentoHistorico = async (itemHistorico) => {
     const novoValorStr = prompt(
-      `Editar pagamento do dia ${new Date(itemHistorico.data).toLocaleDateString('pt-BR')}:\nInforme o valor correto:`,
+      `Corrigir pagamento do dia ${new Date(itemHistorico.data).toLocaleDateString('pt-BR')}:\nInforme o valor correto:`,
       Number(itemHistorico.valor).toFixed(2)
     )
 
@@ -132,13 +156,14 @@ export default function ContasReceber() {
       return
     }
 
-    const historicoAtualizado = contaModal.historico_pagamentos.map(h => 
+    const historicoBase = Array.isArray(contaModalHist.historico_pagamentos) ? contaModalHist.historico_pagamentos : []
+    const historicoAtualizado = historicoBase.map(h => 
       h.id === itemHistorico.id ? { ...h, valor: novoValor } : h
     )
 
     const novoTotalPago = historicoAtualizado.reduce((acc, h) => acc + Number(h.valor || 0), 0)
-    const totalOriginal = Number(contaModal.valor || 0)
-    const novoStatus = novoTotalPago >= totalOriginal ? 'pago' : 'pendente'
+    const totalOriginal = Number(contaModalHist.valor || 0)
+    const novoStatus = novoTotalPago >= (totalOriginal - 0.01) ? 'pago' : 'pendente'
 
     const { error } = await supabase
       .from('contas_a_receber')
@@ -147,23 +172,23 @@ export default function ContasReceber() {
         historico_pagamentos: historicoAtualizado,
         status: novoStatus
       })
-      .eq('id', contaModal.id)
+      .eq('id', contaModalHist.id)
 
     if (!error) {
-      carregarContas()
+      await carregarContas()
     } else {
       alert('Erro ao salvar alteração: ' + error.message)
     }
   }
 
-  // Excluir um pagamento lançado por engano
   const excluirPagamentoHistorico = async (idHistorico) => {
     if (!confirm('Deseja realmente remover esse registro de pagamento? O saldo será recalculado.')) return
 
-    const historicoAtualizado = contaModal.historico_pagamentos.filter(h => h.id !== idHistorico)
+    const historicoBase = Array.isArray(contaModalHist.historico_pagamentos) ? contaModalHist.historico_pagamentos : []
+    const historicoAtualizado = historicoBase.filter(h => h.id !== idHistorico)
     const novoTotalPago = historicoAtualizado.reduce((acc, h) => acc + Number(h.valor || 0), 0)
-    const totalOriginal = Number(contaModal.valor || 0)
-    const novoStatus = novoTotalPago >= totalOriginal ? 'pago' : 'pendente'
+    const totalOriginal = Number(contaModalHist.valor || 0)
+    const novoStatus = novoTotalPago >= (totalOriginal - 0.01) ? 'pago' : 'pendente'
 
     const { error } = await supabase
       .from('contas_a_receber')
@@ -172,10 +197,10 @@ export default function ContasReceber() {
         historico_pagamentos: historicoAtualizado,
         status: novoStatus
       })
-      .eq('id', contaModal.id)
+      .eq('id', contaModalHist.id)
 
     if (!error) {
-      carregarContas()
+      await carregarContas()
     } else {
       alert('Erro ao remover: ' + error.message)
     }
@@ -188,35 +213,53 @@ export default function ContasReceber() {
   return (
     <div className="cr-wrapper">
       <style>{`
-        .cr-wrapper { max-width: 1200px; margin: 0 auto; }
-        .cr-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
+        .cr-wrapper { width: 100%; max-width: 1200px; margin: 0 auto; }
+        .cr-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
         .cr-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .cr-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
-        .summary-card { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 1rem 1.5rem; display: flex; flex-direction: column; }
+        .summary-card { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 1rem 1.5rem; display: flex; flex-direction: column; min-width: 220px; }
         .summary-card span { font-size: 0.72rem; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.05em; }
         .summary-card strong { font-size: 1.6rem; font-weight: 800; color: #c2410c; letter-spacing: -0.02em; }
-        .filter-bar { display: flex; gap: 8px; margin-bottom: 1.25rem; }
-        .filter-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+        
+        .filter-bar { display: flex; gap: 8px; margin-bottom: 1.25rem; overflow-x: auto; padding-bottom: 4px; }
+        .filter-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .filter-btn.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
-        .table-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1.25rem; border-bottom: 1px solid #e2e8f0; }
-        td { padding: 1rem 1.25rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        
+        /* Container responsivo com rolagem horizontal livre */
+        .table-box { 
+          background: #ffffff; 
+          border: 1px solid #e2e8f0; 
+          border-radius: 16px; 
+          overflow-x: auto; 
+          -webkit-overflow-scrolling: touch;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02); 
+          width: 100%;
+        }
+        
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 820px; }
+        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1.25rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+        td { padding: 1rem 1.25rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; white-space: nowrap; }
         tbody tr:hover { background: #f8fafc; }
         .badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
         .badge-pendente { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
         .badge-pago { background: #ecfdf5; color: #047857; border: 1px solid #d1fae5; }
-        .btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: #ffffff; }
+        .btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 0.45rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: #ffffff; white-space: nowrap; }
         .btn-action:hover { background: #1d4ed8; }
         .btn-sec { background: #f1f5f9; color: #475569; }
         .btn-sec:hover { background: #e2e8f0; color: #0f172a; }
         
-        /* Modal */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
-        .modal-card { background: #ffffff; width: 100%; max-width: 520px; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        /* Modais Responsivos */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
+        .modal-card { background: #ffffff; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem; }
         .modal-title { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
-        .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-radius: 8px; background: #f8fafc; margin-bottom: 6px; border: 1px solid #f1f5f9; }
+        .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-radius: 8px; background: #f8fafc; margin-bottom: 6px; border: 1px solid #f1f5f9; gap: 8px; }
+        .input-money { height: 44px; width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 6px; }
+
+        @media (max-width: 768px) {
+          .cr-header { flex-direction: column; align-items: stretch; }
+          .summary-card { width: 100%; }
+        }
       `}</style>
 
       <div className="cr-header">
@@ -305,13 +348,13 @@ export default function ContasReceber() {
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         {isPendente && (
-                          <button className="btn-action" onClick={() => registrarNovoPagamento(conta)}>
+                          <button className="btn-action" onClick={() => abrirModalRecebimento(conta)}>
                             <IconCheck /> Receber
                           </button>
                         )}
                         <button 
                           className="btn-action btn-sec" 
-                          onClick={() => setContaModal(conta)}
+                          onClick={() => setContaModalHist(conta)}
                           title="Ver histórico e editar pagamentos"
                         >
                           <IconHistory /> Histórico
@@ -326,14 +369,71 @@ export default function ContasReceber() {
         )}
       </div>
 
-      {/* Modal de Histórico e Ajustes de Pagamento */}
-      {contaModal && (
-        <div className="modal-overlay" onClick={() => setContaModal(null)}>
+      {/* MODAL 1: REGISTRAR RECEBIMENTO */}
+      {contaModalReceber && (
+        <div className="modal-overlay" onClick={() => setContaModalReceber(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Histórico de Recebimentos</h3>
+              <h3 className="modal-title">Registrar Pagamento</h3>
               <button 
-                onClick={() => setContaModal(null)} 
+                onClick={() => setContaModalReceber(null)} 
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.88rem' }}>
+              <div><strong>{contaModalReceber.descricao}</strong></div>
+              <div style={{ color: '#64748b', marginTop: '3px' }}>Cliente: {contaModalReceber.clientes?.nome || 'Avulso'}</div>
+              <div style={{ marginTop: '6px', color: '#c2410c', fontWeight: 700 }}>
+                Saldo Devedor Atual: R$ {Math.max(0, Number(contaModalReceber.valor || 0) - Number(contaModalReceber.valor_pago || 0)).toFixed(2)}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Valor a Receber Agora (R$):
+              </label>
+              <input 
+                type="number" 
+                step="0.01"
+                className="input-money"
+                value={valorReceberInput}
+                onChange={e => setValorReceberInput(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button 
+                className="btn-action btn-sec" 
+                onClick={() => setContaModalReceber(null)}
+                disabled={salvandoRecebimento}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn-action" 
+                onClick={confirmarRecebimento}
+                disabled={salvandoRecebimento}
+                style={{ background: '#10b981' }}
+              >
+                <IconCheck /> {salvandoRecebimento ? 'Salvando...' : 'Confirmar Pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: HISTÓRICO E AJUSTES DE PAGAMENTOS */}
+      {contaModalHist && (
+        <div className="modal-overlay" onClick={() => setContaModalHist(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Histórico de Pagamentos</h3>
+              <button 
+                onClick={() => setContaModalHist(null)} 
                 style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
               >
                 ✕
@@ -341,22 +441,22 @@ export default function ContasReceber() {
             </div>
 
             <div style={{ marginBottom: '1.25rem', padding: '10px 14px', background: '#f1f5f9', borderRadius: '10px', fontSize: '0.85rem' }}>
-              <div><strong>{contaModal.descricao}</strong></div>
-              <div style={{ color: '#64748b', marginTop: '2px' }}>Cliente: {contaModal.clientes?.nome || 'Avulso'}</div>
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '6px' }}>
-                <span>Total: <strong>R$ {Number(contaModal.valor).toFixed(2)}</strong></span>
-                <span>Pago: <strong style={{ color: '#16a34a' }}>R$ {Number(contaModal.valor_pago || 0).toFixed(2)}</strong></span>
-                <span>Restante: <strong style={{ color: '#ea580c' }}>R$ {Math.max(0, Number(contaModal.valor) - Number(contaModal.valor_pago || 0)).toFixed(2)}</strong></span>
+              <div><strong>{contaModalHist.descricao}</strong></div>
+              <div style={{ color: '#64748b', marginTop: '2px' }}>Cliente: {contaModalHist.clientes?.nome || 'Avulso'}</div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '6px', flexWrap: 'wrap' }}>
+                <span>Total: <strong>R$ {Number(contaModalHist.valor).toFixed(2)}</strong></span>
+                <span>Pago: <strong style={{ color: '#16a34a' }}>R$ {Number(contaModalHist.valor_pago || 0).toFixed(2)}</strong></span>
+                <span>Restante: <strong style={{ color: '#ea580c' }}>R$ {Math.max(0, Number(contaModalHist.valor) - Number(contaModalHist.valor_pago || 0)).toFixed(2)}</strong></span>
               </div>
             </div>
 
             <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '1rem' }}>
-              {(!contaModal.historico_pagamentos || contaModal.historico_pagamentos.length === 0) ? (
+              {(!contaModalHist.historico_pagamentos || contaModalHist.historico_pagamentos.length === 0) ? (
                 <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', padding: '1rem' }}>
-                  Nenhum pagamento detalhado registrado ainda (ou valor veio de entrada simples).
+                  Nenhum pagamento detalhado registrado ainda.
                 </p>
               ) : (
-                contaModal.historico_pagamentos.map((item, idx) => (
+                contaModalHist.historico_pagamentos.map((item, idx) => (
                   <div key={item.id || idx} className="hist-item">
                     <div>
                       <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>
@@ -392,7 +492,7 @@ export default function ContasReceber() {
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button 
                 className="btn-action btn-sec" 
-                onClick={() => setContaModal(null)}
+                onClick={() => setContaModalHist(null)}
                 style={{ padding: '0.6rem 1.2rem' }}
               >
                 Fechar
