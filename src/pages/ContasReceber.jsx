@@ -337,7 +337,6 @@ export default function ContasReceber() {
     }
   }
 
-  // Filtragem combinada de busca na lista principal (Nome, Telefone ou Descrição)
   const contasFiltradas = contas.filter(c => {
     if (!busca.trim()) return true
     const termo = busca.toLowerCase()
@@ -363,7 +362,6 @@ export default function ContasReceber() {
         .summary-card span { font-size: 0.7rem; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.05em; }
         .summary-card strong { font-size: 1.45rem; font-weight: 800; color: #c2410c; letter-spacing: -0.02em; }
         
-        /* Barra de Filtro e Busca Integrada */
         .controls-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
         .filter-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
         .filter-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -431,7 +429,6 @@ export default function ContasReceber() {
         </div>
       </div>
 
-      {/* BARRA DE FILTROS E BUSCADOR RÁPIDO */}
       <div className="controls-row">
         <div className="filter-bar">
           <button 
@@ -484,8 +481,8 @@ export default function ContasReceber() {
           <table>
             <thead>
               <tr>
-                <th>Descrição / Venda</th>
                 <th>Cliente</th>
+                <th>Descrição / Venda</th>
                 <th>Vencimento</th>
                 <th>Valor Total</th>
                 <th>Valor Pago</th>
@@ -503,13 +500,13 @@ export default function ContasReceber() {
 
                 return (
                   <tr key={conta.id}>
-                    <td><strong>{conta.descricao || `Título #${conta.id}`}</strong></td>
                     <td>
-                      <div>{conta.clientes?.nome || 'Não identificado'}</div>
+                      <div><strong>{conta.clientes?.nome || 'Não identificado'}</strong></div>
                       {conta.clientes?.telefone && (
                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{conta.clientes.telefone}</span>
                       )}
                     </td>
+                    <td>{conta.descricao || `Título #${conta.id}`}</td>
                     <td>{conta.vencimento ? new Date(conta.vencimento).toLocaleDateString('pt-BR') : '-'}</td>
                     <td>R$ {total.toFixed(2)}</td>
                     <td style={{ color: pago > 0 ? '#16a34a' : '#64748b', fontWeight: 600 }}>
@@ -697,8 +694,8 @@ export default function ContasReceber() {
             </div>
 
             <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.88rem' }}>
-              <div><strong>{contaModalReceber.descricao}</strong></div>
-              <div style={{ color: '#64748b', marginTop: '3px' }}>Cliente: {contaModalReceber.clientes?.nome || 'Avulso'}</div>
+              <div><strong>Cliente: {contaModalReceber.clientes?.nome || 'Avulso'}</strong></div>
+              <div style={{ color: '#64748b', marginTop: '3px' }}>{contaModalReceber.descricao}</div>
               <div style={{ marginTop: '6px', color: '#c2410c', fontWeight: 700 }}>
                 Saldo Devedor Atual: R$ {Math.max(0, Number(contaModalReceber.valor || 0) - Number(contaModalReceber.valor_pago || 0)).toFixed(2)}
               </div>
@@ -754,8 +751,8 @@ export default function ContasReceber() {
             </div>
 
             <div style={{ marginBottom: '1.25rem', padding: '10px 14px', background: '#f1f5f9', borderRadius: '10px', fontSize: '0.85rem' }}>
-              <div><strong>{contaModalHist.descricao}</strong></div>
-              <div style={{ color: '#64748b', marginTop: '2px' }}>Cliente: {contaModalHist.clientes?.nome || 'Avulso'}</div>
+              <div><strong>Cliente: {contaModalHist.clientes?.nome || 'Avulso'}</strong></div>
+              <div style={{ color: '#64748b', marginTop: '2px' }}>{contaModalHist.descricao}</div>
               <div style={{ display: 'flex', gap: '1rem', marginTop: '6px', flexWrap: 'wrap' }}>
                 <span>Total: <strong>R$ {Number(contaModalHist.valor).toFixed(2)}</strong></span>
                 <span>Pago: <strong style={{ color: '#16a34a' }}>R$ {Number(contaModalHist.valor_pago || 0).toFixed(2)}</strong></span>
