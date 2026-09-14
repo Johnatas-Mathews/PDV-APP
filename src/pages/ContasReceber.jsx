@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 
 // Ícones SVG minimalistas nativos
@@ -53,7 +53,11 @@ export default function ContasReceber() {
 
   // Modal Novo Título Manual (Dívidas Antigas)
   const [modalNovoTitulo, setModalNovoTitulo] = useState(false)
-  const [novoClienteId, setNovoClienteId] = useState('')
+  const [clienteSelecionadoObj, setClienteSelecionadoObj] = useState(null)
+  const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
+  const [mostrarDropdownCli, setMostrarDropdownCli] = useState(false)
+  const dropdownCliRef = useRef(null)
+
   const [novaDescricao, setNovaDescricao] = useState('')
   const [novoValorTotal, setNovoValorTotal] = useState('')
   const [novoValorPago, setNovoValorPago] = useState('')
@@ -63,15 +67,13 @@ export default function ContasReceber() {
   const carregarDados = async () => {
     setLoading(true)
     try {
-      // Carrega clientes para o formulário
       const { data: cliData } = await supabase
         .from('clientes')
-        .select('id, nome, telefone')
+        .select('id, nome, telefone, cpf')
         .order('nome', { ascending: true })
 
       if (cliData) setClientes(cliData)
 
-      // Carrega contas a receber
       let query = supabase
         .from('contas_a_receber')
         .select('*, clientes(nome, telefone)')
@@ -101,7 +103,39 @@ export default function ContasReceber() {
     carregarDados()
   }, [filtro])
 
-  // Abre modal de recebimento
+  // Fecha dropdown do cliente se clicar fora
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownCliRef.current && !dropdownCliRef.current.contains(e.target)) {
+        setMostrarDropdownCli(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Clientes filtrados conforme digitação no modal
+  const clientesFiltradosBusca = clientes.filter(c => {
+    if (!termoBuscaCliente) return true
+    const t = termoBuscaCliente.toLowerCase()
+    return (
+      c.nome.toLowerCase().includes(t) ||
+      (c.telefone && c.telefone.includes(t)) ||
+      (c.cpf && c.cpf.includes(t))
+    )
+  }).slice(0, 6)
+
+  const selecionarCliente = (c) => {
+    setClienteSelecionadoObj(c)
+    setTermoBuscaCliente(c.nome)
+    setMostrarDropdownCli(false)
+  }
+
+  const limparSelecaoCliente = () => {
+    setClienteSelecionadoObj(null)
+    setTermoBuscaCliente('')
+  }
+
   const abrirModalRecebimento = (conta) => {
     const total = Number(conta.valor || 0)
     const pago = Number(conta.valor_pago || 0)
@@ -110,7 +144,6 @@ export default function ContasReceber() {
     setValorReceberInput(restante.toFixed(2))
   }
 
-  // Baixa de pagamento
   const confirmarRecebimento = async () => {
     if (!contaModalReceber) return
 
@@ -171,8 +204,8 @@ export default function ContasReceber() {
   const salvarNovoTituloManual = async (e) => {
     e.preventDefault()
 
-    if (!novoClienteId) {
-      alert('Selecione o cliente devedor.')
+    if (!clienteSelecionadoObj) {
+      alert('Selecione um cliente cadastrado.')
       return
     }
 
@@ -206,7 +239,7 @@ export default function ContasReceber() {
         .from('contas_a_receber')
         .insert([
           {
-            cliente_id: parseInt(novoClienteId),
+            cliente_id: clienteSelecionadoObj.id,
             descricao: novaDescricao.trim() || 'Saldo Devedor / Venda Antiga',
             valor: valTotal,
             valor_pago: valPago,
@@ -220,7 +253,7 @@ export default function ContasReceber() {
 
       alert('Dívida antiga lançada com sucesso!')
       setModalNovoTitulo(false)
-      setNovoClienteId('')
+      limparSelecaoCliente()
       setNovaDescricao('')
       setNovoValorTotal('')
       setNovoValorPago('')
@@ -233,7 +266,6 @@ export default function ContasReceber() {
     setSalvandoNovoTitulo(false)
   }
 
-  // Editar valor de um pagamento específico do histórico
   const editarPagamentoHistorico = async (itemHistorico) => {
     const novoValorStr = prompt(
       `Corrigir pagamento do dia ${new Date(itemHistorico.data).toLocaleDateString('pt-BR')}:\nInforme o valor correto:`,
@@ -273,7 +305,6 @@ export default function ContasReceber() {
     }
   }
 
-  // Excluir um lançamento do histórico
   const excluirPagamentoHistorico = async (idHistorico) => {
     if (!confirm('Deseja realmente remover esse registro de pagamento? O saldo será recalculado.')) return
 
@@ -342,9 +373,16 @@ export default function ContasReceber() {
         .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-radius: 8px; background: #f8fafc; margin-bottom: 6px; border: 1px solid #f1f5f9; gap: 8px; }
         .input-money { height: 44px; width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 6px; }
 
-        .form-group-modal { display: flex; flex-direction: column; margin-bottom: 1rem; }
+        .form-group-modal { display: flex; flex-direction: column; margin-bottom: 1rem; position: relative; }
         .form-group-modal label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 5px; text-transform: uppercase; }
         .form-group-modal input, .form-group-modal select { height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.9rem; color: #0f172a; }
+        .form-group-modal input:focus { outline: none; border-color: #2563eb; }
+
+        /* Dropdown Autocomplete de Clientes */
+        .cli-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; z-index: 50; margin-top: 4px; }
+        .cli-item { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; }
+        .cli-item:hover { background: #eff6ff; }
+        .cli-selected-badge { display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px 12px; border-radius: 8px; margin-top: 6px; font-size: 0.88rem; color: #1e40af; }
 
         @media (max-width: 768px) {
           .cr-header { flex-direction: column; align-items: stretch; }
@@ -465,7 +503,7 @@ export default function ContasReceber() {
         )}
       </div>
 
-      {/* MODAL NOVO TÍTULO MANUAL (DÍVIDA ANTIGA) */}
+      {/* MODAL NOVO TÍTULO MANUAL COM AUTOCOMPLETE DE CLIENTE */}
       {modalNovoTitulo && (
         <div className="modal-overlay" onClick={() => setModalNovoTitulo(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -480,23 +518,57 @@ export default function ContasReceber() {
             </div>
 
             <form onSubmit={salvarNovoTituloManual}>
-              <div className="form-group-modal">
-                <label>Cliente Devedor</label>
-                <select 
-                  value={novoClienteId} 
-                  onChange={e => setNovoClienteId(e.target.value)}
-                  required
-                >
-                  <option value="">Selecione o cliente...</option>
-                  {clientes.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome} {c.telefone ? `(${c.telefone})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '3px' }}>
-                  Se o cliente não estiver na lista, cadastre-o na aba "Clientes".
-                </span>
+              {/* CAMPO COM AUTOCOMPLETE */}
+              <div className="form-group-modal" ref={dropdownCliRef}>
+                <label>Pesquisar Cliente (Digite o Nome, Telefone ou CPF)</label>
+                {!clienteSelecionadoObj ? (
+                  <>
+                    <input 
+                      type="text"
+                      placeholder="Ex: Maria, Carlos, (11) 98..."
+                      value={termoBuscaCliente}
+                      onChange={e => { setTermoBuscaCliente(e.target.value); setMostrarDropdownCli(true); }}
+                      onFocus={() => setMostrarDropdownCli(true)}
+                      required
+                    />
+
+                    {mostrarDropdownCli && (
+                      <div className="cli-dropdown">
+                        {clientesFiltradosBusca.length === 0 ? (
+                          <div style={{ padding: '10px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
+                            Nenhum cliente encontrado.
+                          </div>
+                        ) : (
+                          clientesFiltradosBusca.map(c => (
+                            <div 
+                              key={c.id} 
+                              className="cli-item"
+                              onClick={() => selecionarCliente(c)}
+                            >
+                              <strong>{c.nome}</strong>
+                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{c.telefone || c.cpf || ''}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="cli-selected-badge">
+                    <div>
+                      <strong>{clienteSelecionadoObj.nome}</strong>
+                      {clienteSelecionadoObj.telefone && <span style={{ marginLeft: '8px', fontSize: '0.8rem', opacity: 0.85 }}>({clienteSelecionadoObj.telefone})</span>}
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={limparSelecaoCliente}
+                      style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}
+                      title="Trocar cliente"
+                    >
+                      ✕ Trocar
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="form-group-modal">
