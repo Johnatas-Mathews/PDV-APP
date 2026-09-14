@@ -21,7 +21,7 @@ const IconTrash = () => (
 )
 
 const IconTag = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
     <circle cx="7" cy="7" r=".5" fill="currentColor" />
   </svg>
@@ -63,7 +63,6 @@ const gerarCodigoEAN13 = () => {
   return base12 + digitoVerificador
 }
 
-// Conjuntos padrão de grade para moda e perfumaria
 const GRADES_PREDEFINIDAS = {
   vestuario: ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
   calcados: ['34', '35', '36', '37', '38', '39', '40', '41', '42', '44'],
@@ -193,7 +192,6 @@ export default function Produtos() {
     setModalGradeAberto(true)
   }
 
-  // Toggle de Tamanhos e Cores nos Chips
   const toggleTamanho = (tam) => {
     setTamanhosSelecionados(prev => 
       prev.includes(tam) ? prev.filter(t => t !== tam) : [...prev, tam]
@@ -229,7 +227,6 @@ export default function Produtos() {
     setCustomCorInput('')
   }
 
-  // GERAR MATRIZ EM LOTE
   const gerarMatrizCombinacoes = async () => {
     if (tamanhosSelecionados.length === 0 && coresSelecionadas.length === 0) {
       return alert('Selecione pelo menos um Tamanho ou uma Cor para gerar a grade.')
@@ -239,11 +236,9 @@ export default function Produtos() {
     const cors = coresSelecionadas.length > 0 ? coresSelecionadas : [null]
     const qtdPadrao = parseInt(estoquePadraoMatriz) || 0
 
-    // Monta a combinação cartesiana
     const novasLinhas = []
     tams.forEach(tam => {
       cors.forEach(cor => {
-        // Evita duplicatas com o que já existe
         const jaExiste = variacoesDoProd.some(v => 
           (v.tamanho || null) === (tam || null) && (v.cor || null) === (cor || null)
         )
@@ -272,11 +267,10 @@ export default function Produtos() {
       const listaAtualizada = [...variacoesDoProd, ...data]
       setVariacoesDoProd(listaAtualizada)
 
-      // Atualiza o estoque total somado do produto pai
       const somaEstoqueGrade = listaAtualizada.reduce((s, v) => s + (v.estoque || 0), 0)
       await supabase.from('produtos').update({ estoque: somaEstoqueGrade }).eq('id', produtoGradeSel.id)
 
-      alert(`✅ ${novasLinhas.length} variações geradas com sucesso com códigos EAN-13 exclusivos!`)
+      alert(`✅ ${novasLinhas.length} variações geradas com sucesso!`)
       setTamanhosSelecionados([])
       setCoresSelecionadas([])
       await carregarDados()
@@ -336,10 +330,11 @@ export default function Produtos() {
   return (
     <div className="prod-wrapper">
       <style>{`
-        .prod-wrapper { max-width: 1200px; margin: 0 auto; }
+        .prod-wrapper { width: 100%; max-width: 1200px; margin: 0 auto; box-sizing: border-box; }
         .page-header { margin-bottom: 1.5rem; }
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
+        
         .card-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
         .card-box h2 { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1.25rem; }
         .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
@@ -357,7 +352,7 @@ export default function Produtos() {
         .chip-cat { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; }
         .chip-cat.selected { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; font-weight: 600; }
 
-        .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; white-space: nowrap; }
         .btn-primary { background: #2563eb; color: #ffffff; }
         .btn-primary:hover { background: #1d4ed8; }
         .btn-secondary { background: #f1f5f9; color: #475569; }
@@ -365,33 +360,37 @@ export default function Produtos() {
         .btn-danger { background: #fee2e2; color: #dc2626; }
         .btn-grade { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
         .btn-grade:hover { background: #dcfce7; }
-        .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
+        .btn-sm { padding: 0.45rem 0.65rem; font-size: 0.8rem; border-radius: 6px; min-height: 32px; }
 
-        .filter-section { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .filter-section { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
         .search-input { height: 40px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 12px; font-size: 0.9rem; width: 280px; }
-        .cat-pills { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+        .cat-pills { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; max-width: 100%; -webkit-overflow-scrolling: touch; }
         .pill { padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .pill.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1rem; border-bottom: 1px solid #e2e8f0; }
-        td { padding: 1rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        /* Container de Tabela com Scroll Responsivo */
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 680px; }
+        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+        td { padding: 0.85rem 1rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         tbody tr:hover { background: #f8fafc; }
+        
+        .col-acoes { text-align: center; white-space: nowrap; min-width: 180px; }
+        .acoes-group { display: inline-flex; align-items: center; gap: 6px; }
+
         .badge-cat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #334155; font-size: 0.78rem; font-weight: 600; }
         .barcode-tag { display: inline-flex; align-items: center; gap: 4px; font-family: monospace; font-size: 0.75rem; color: #64748b; background: #f8fafc; padding: 2px 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-top: 3px; }
-        
         .var-chip { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 2px 6px; font-size: 0.75rem; margin: 2px; }
 
         /* Modal Grade */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
-        .modal-card { background: #ffffff; width: 100%; max-width: 780px; max-height: 92vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 0.75rem; }
+        .modal-card { background: #ffffff; width: 100%; max-width: 780px; max-height: 94vh; overflow-y: auto; border-radius: 16px; padding: 1.25rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); box-sizing: border-box; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem; }
         .modal-title { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
 
-        /* Construtor de Matriz */
-        .matriz-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem; }
-        .matriz-section-title { font-size: 0.75rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-        .presets-bar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        .matriz-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.1rem; margin-bottom: 1.25rem; }
+        .matriz-section-title { font-size: 0.75rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+        .presets-bar { display: flex; gap: 6px; flex-wrap: wrap; }
         .btn-preset { font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #334155; font-weight: 600; cursor: pointer; }
         .btn-preset:hover { background: #f1f5f9; border-color: #94a3b8; }
 
@@ -399,9 +398,16 @@ export default function Produtos() {
         .chip-selectable { padding: 6px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 0.85rem; font-weight: 600; color: #334155; cursor: pointer; transition: all 0.1s; }
         .chip-selectable.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
+        /* Media Queries para Telas Pequenas e Celular */
         @media (max-width: 768px) {
+          .card-box { padding: 1rem; }
           .form-row { flex-direction: column; gap: 0.75rem; }
           .search-input { width: 100%; }
+          .filter-section { flex-direction: column; align-items: stretch; }
+          .modal-card { padding: 1rem; }
+          .col-acoes { min-width: 140px; }
+          .acoes-group { flex-direction: column; width: 100%; gap: 4px; }
+          .acoes-group button { width: 100%; justify-content: center; }
         }
       `}</style>
 
@@ -512,7 +518,7 @@ export default function Produtos() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginTop: '1rem' }}>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexWrap: 'wrap' }}>
             <button type="submit" className="btn btn-primary" disabled={salvando} style={{ gap: '6px' }}>
               <IconPlus /> {salvando ? 'Salvando...' : (idEditando ? 'Salvar Alterações' : 'Cadastrar Produto')}
             </button>
@@ -562,89 +568,91 @@ export default function Produtos() {
             Nenhum produto encontrado.
           </p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Produto / Grade</th>
-                <th>Categoria</th>
-                <th>Custo</th>
-                <th>Venda</th>
-                <th>Estoque Total</th>
-                <th style={{ textAlign: 'center' }}>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {produtosFiltrados.map(prod => {
-                const venda = Number(prod.preco || 0)
-                const custo = Number(prod.preco_custo || 0)
-                const varsDesteProd = variacoes.filter(v => v.produto_id === prod.id)
-                const temGrade = varsDesteProd.length > 0
+          <div className="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Produto / Grade</th>
+                  <th>Categoria</th>
+                  <th>Custo</th>
+                  <th>Venda</th>
+                  <th>Estoque Total</th>
+                  <th className="col-acoes">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {produtosFiltrados.map(prod => {
+                  const venda = Number(prod.preco || 0)
+                  const custo = Number(prod.preco_custo || 0)
+                  const varsDesteProd = variacoes.filter(v => v.produto_id === prod.id)
+                  const temGrade = varsDesteProd.length > 0
 
-                return (
-                  <tr key={prod.id}>
-                    <td>
-                      <div><strong>{prod.nome}</strong></div>
-                      {prod.codigo_barras && (
-                        <span className="barcode-tag">
-                          <IconBarcode /> {prod.codigo_barras}
+                  return (
+                    <tr key={prod.id}>
+                      <td>
+                        <div><strong>{prod.nome}</strong></div>
+                        {prod.codigo_barras && (
+                          <span className="barcode-tag">
+                            <IconBarcode /> {prod.codigo_barras}
+                          </span>
+                        )}
+
+                        {temGrade && (
+                          <div style={{ marginTop: '4px' }}>
+                            {varsDesteProd.map(v => (
+                              <span key={v.id} className="var-chip">
+                                <strong>{v.tamanho || 'U'}</strong>{v.cor ? ` (${v.cor})` : ''}: {v.estoque} un
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className="badge-cat">
+                          <IconTag /> {prod.categoria || 'Geral'}
                         </span>
-                      )}
-
-                      {temGrade && (
-                        <div style={{ marginTop: '4px' }}>
-                          {varsDesteProd.map(v => (
-                            <span key={v.id} className="var-chip">
-                              <strong>{v.tamanho || 'U'}</strong>{v.cor ? ` (${v.cor})` : ''}: {v.estoque} un
-                            </span>
-                          ))}
+                      </td>
+                      <td style={{ color: '#64748b', whiteSpace: 'nowrap' }}>R$ {custo.toFixed(2)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}><strong>R$ {venda.toFixed(2)}</strong></td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <strong>{prod.estoque || 0} un</strong>
+                      </td>
+                      <td className="col-acoes">
+                        <div className="acoes-group">
+                          <button 
+                            className="btn btn-sm btn-grade"
+                            onClick={() => abrirGrade(prod)}
+                            title="Gerenciar Grade de Tamanhos e Cores"
+                            style={{ gap: '4px' }}
+                          >
+                            <IconLayers /> Grade ({varsDesteProd.length})
+                          </button>
+                          <button 
+                            className="btn btn-sm btn-secondary" 
+                            onClick={() => iniciarEdicao(prod)}
+                            title="Editar dados"
+                          >
+                            <IconEdit />
+                          </button>
+                          <button 
+                            className="btn btn-sm btn-danger" 
+                            onClick={() => excluirProduto(prod.id, prod.nome)}
+                            title="Excluir produto"
+                          >
+                            <IconTrash />
+                          </button>
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <span className="badge-cat">
-                        <IconTag /> {prod.categoria || 'Geral'}
-                      </span>
-                    </td>
-                    <td style={{ color: '#64748b' }}>R$ {custo.toFixed(2)}</td>
-                    <td><strong>R$ {venda.toFixed(2)}</strong></td>
-                    <td>
-                      <strong>{prod.estoque || 0} un</strong>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button 
-                          className="btn btn-sm btn-grade"
-                          onClick={() => abrirGrade(prod)}
-                          title="Gerenciar Grade de Tamanhos e Cores"
-                          style={{ gap: '4px' }}
-                        >
-                          <IconLayers /> Grade ({varsDesteProd.length})
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-secondary" 
-                          onClick={() => iniciarEdicao(prod)}
-                          title="Editar dados"
-                        >
-                          <IconEdit />
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-danger" 
-                          onClick={() => excluirProduto(prod.id, prod.nome)}
-                          title="Excluir produto"
-                        >
-                          <IconTrash />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* MODAL CONSTRUTOR DE MATRIZ DE GRADE */}
+      {/* MODAL CONSTRUTOR DE MATRIZ DE GRADE RESPONSIVO */}
       {modalGradeAberto && produtoGradeSel && (
         <div className="modal-overlay" onClick={() => setModalGradeAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -653,7 +661,7 @@ export default function Produtos() {
                 <h3 className="modal-title">Grade: {produtoGradeSel.nome}</h3>
                 <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Gere combinações em lote com códigos EAN-13 exclusivos</span>
               </div>
-              <button onClick={() => setModalGradeAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+              <button onClick={() => setModalGradeAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '20px', color: '#64748b', padding: '4px' }}>✕</button>
             </div>
 
             {/* Gerador de Matriz Inteligente */}
@@ -662,13 +670,13 @@ export default function Produtos() {
                 <span>1. Escolha os Tamanhos</span>
                 <div className="presets-bar">
                   <button type="button" className="btn-preset" onClick={() => aplicarPredefinicaoTamanho('vestuario')}>
-                    👕 Vestuário (PP ao GG)
+                    👕 Vestuário (PP-GG)
                   </button>
                   <button type="button" className="btn-preset" onClick={() => aplicarPredefinicaoTamanho('calcados')}>
-                    👟 Calçados (34 ao 44)
+                    👟 Calçados (34-44)
                   </button>
                   <button type="button" className="btn-preset" onClick={() => aplicarPredefinicaoTamanho('perfumaria')}>
-                    🧴 Perfumaria (30ml a 200ml)
+                    🧴 Perfumes
                   </button>
                   <button type="button" className="btn-preset" onClick={() => setTamanhosSelecionados([])} style={{ color: '#dc2626' }}>
                     Limpar
@@ -691,13 +699,13 @@ export default function Produtos() {
               </div>
 
               {/* Input para Tamanho Customizado */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
-                  placeholder="Outro tamanho (ex: G1, 46, Único)" 
+                  placeholder="Outro tamanho (ex: G1, 46)" 
                   value={customTamInput}
                   onChange={e => setCustomTamInput(e.target.value)}
-                  style={{ height: '34px', fontSize: '0.85rem', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '6px', width: '220px' }}
+                  style={{ height: '34px', fontSize: '0.85rem', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1', minWidth: '140px' }}
                 />
                 <button type="button" className="btn-preset" onClick={adicionarTamanhoCustom}>
                   + Adicionar Tam
@@ -726,13 +734,13 @@ export default function Produtos() {
               </div>
 
               {/* Input para Cor Customizada */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
-                  placeholder="Outra cor (ex: Estampado, Dourado)" 
+                  placeholder="Outra cor (ex: Floral, Dourado)" 
                   value={customCorInput}
                   onChange={e => setCustomCorInput(e.target.value)}
-                  style={{ height: '34px', fontSize: '0.85rem', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '6px', width: '220px' }}
+                  style={{ height: '34px', fontSize: '0.85rem', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1', minWidth: '140px' }}
                 />
                 <button type="button" className="btn-preset" onClick={adicionarCorCustom}>
                   + Adicionar Cor
@@ -742,7 +750,7 @@ export default function Produtos() {
               {/* Rodapé do Construtor */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '10px', flexWrap: 'wrap', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Estoque Padrão por Peça:</label>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Estoque Padrão:</label>
                   <input 
                     type="number" 
                     min="0"
@@ -782,8 +790,8 @@ export default function Produtos() {
                 Nenhuma variação criada. Use os botões acima para gerar a matriz em lote.
               </p>
             ) : (
-              <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '0.85rem' }}>
+              <div className="table-responsive" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '0.85rem', minWidth: '460px' }}>
                   <thead>
                     <tr>
                       <th style={{ padding: '6px 8px' }}>Tamanho</th>
@@ -809,11 +817,11 @@ export default function Produtos() {
                             min="0"
                             defaultValue={v.estoque} 
                             onBlur={e => atualizarEstoqueRapidoVar(v.id, e.target.value)}
-                            style={{ width: '60px', height: '28px', textAlign: 'center', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                            style={{ width: '54px', height: '28px', textAlign: 'center', border: '1px solid #cbd5e1', borderRadius: '6px' }}
                           />
                         </td>
                         <td style={{ padding: '8px', textAlign: 'center' }}>
-                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px' }}>
                             <button 
                               type="button" 
                               onClick={() => regenerarCodigoVar(v.id)} 
