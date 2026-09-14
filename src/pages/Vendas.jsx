@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
@@ -63,19 +63,35 @@ const IconSparkles = () => (
   </svg>
 )
 
+const IconCamera = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+    <circle cx="12" cy="13" r="3" />
+  </svg>
+)
+
 export default function Vendas() {
   const [produtos, setProdutos] = useState([])
   const [clientes, setClientes] = useState([])
   const [vendas, setVendas] = useState([])
-  const [taxaCashback, setTaxaCashback] = useState(5) // Porcentagem padrão
+  const [taxaCashback, setTaxaCashback] = useState(5)
   
   const [clienteSelecionado, setClienteSelecionado] = useState('')
-  const [produtoSelecionado, setProdutoSelecionado] = useState('')
   const [quantidade, setQuantidade] = useState('1')
   const [itensVenda, setItensVenda] = useState([])
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [valorEntrada, setValorEntrada] = useState('')
   
+  // Busca inteligente de produtos
+  const [termoBuscaProduto, setTermoBuscaProduto] = useState('')
+  const [produtoSelecionadoObj, setProdutoSelecionadoObj] = useState(null)
+  const [mostrarDropdownBusca, setMostrarDropdownBusca] = useState(false)
+  const dropdownRef = useRef(null)
+
+  // Câmera / Leitor de código de barras
+  const [modalCameraAberto, setModalCameraAberto] = useState(false)
+  const [html5QrCodeScanner, setHtml5QrCodeScanner] = useState(null)
+
   const [desconto, setDesconto] = useState(0)
   const [usarCashback, setUsarCashback] = useState(false)
   const [valorRecebido, setValorRecebido] = useState('')
@@ -84,7 +100,7 @@ export default function Vendas() {
   const [vendaEditando, setVendaEditando] = useState(null)
   const [itensOriginais, setItensOriginais] = useState([])
 
-  // Modal de Caixa
+  // Modal Caixa
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [vendasDoDia, setVendasDoDia] = useState([])
   const [carregandoCaixa, setCarregandoCaixa] = useState(false)
@@ -93,8 +109,6 @@ export default function Vendas() {
     const { data: prodData } = await supabase.from('produtos').select('*').order('nome')
     const { data: cliData } = await supabase.from('clientes').select('*').order('nome')
     const { data: venData } = await supabase.from('vendas').select('*, clientes(nome, telefone, saldo_cashback)').order('id', { ascending: false }).limit(10)
-    
-    // Busca a taxa de cashback configurada
     const { data: cfgData } = await supabase.from('configuracoes').select('valor').eq('chave', 'cashback_percentual').maybeSingle()
 
     if (prodData) setProdutos(prodData)
@@ -107,73 +121,36 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
-  // Cliente selecionado atualmente
-  const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
-  const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
-
-  // Totais e Descontos
-  const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
-  const descontoManual = parseFloat(desconto) || 0
-  const valorAbatidoCashback = usarCashback ? Math.min(subtotal - descontoManual, saldoCashbackDisponivel) : 0
-  const totalComDesconto = Math.max(0, subtotal - descontoManual - valorAbatidoCashback)
-  
-  // Novo cashback que esta compra vai gerar
-  const novoCashbackGerado = (totalComDesconto * (taxaCashback / 100))
-
-  const numValorRecebido = parseFloat(valorRecebido) || 0
-  const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto 
-    ? numValorRecebido - totalComDesconto 
-    : 0
-
-  const numValorEntrada = parseFloat(valorEntrada) || 0
-  const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
-
-  // Fechamento de caixa
-  const abrirFechamentoCaixa = async () => {
-    setCarregandoCaixa(true)
-    setModalCaixaAberto(true)
-
-    const hoje = new Date()
-    hoje.setHours(0, 0, 0, 0)
-
-    const { data, error } = await supabase
-      .from('vendas')
-      .select('*, clientes(nome)')
-      .gte('created_at', hoje.toISOString())
-      .order('created_at', { ascending: true })
-
-    if (!error && data) {
-      setVendasDoDia(data)
+  // Fecha dropdown de busca ao clicar fora
+  useEffect(() => {
+    const handleClickFora = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setMostrarDropdownBusca(false)
+      }
     }
-    setCarregandoCaixa(false)
+    document.addEventListener('mousedown', handleClickFora)
+    return () => document.removeEventListener('mousedown', handleClickFora)
+  }, [])
+
+  // Produtos filtrados na busca inteligente
+  const produtosFiltradosBusca = produtos.filter(p => {
+    if (!termoBuscaProduto) return true
+    const t = termoBuscaProduto.toLowerCase()
+    return p.nome.toLowerCase().includes(t) || (p.codigo_barras && p.codigo_barras.toLowerCase().includes(t))
+  }).slice(0, 8)
+
+  const selecionarProdutoBusca = (produto) => {
+    setProdutoSelecionadoObj(produto)
+    setTermoBuscaProduto(produto.nome)
+    setMostrarDropdownBusca(false)
   }
 
-  const resumoTotais = vendasDoDia.reduce((acc, v) => {
-    const total = Number(v.total || 0)
-    acc.totalGeral += total
-    acc.qtdPedidos += 1
-    if (v.forma_pagamento === 'dinheiro') acc.dinheiro += total
-    else if (v.forma_pagamento === 'pix') acc.pix += total
-    else if (v.forma_pagamento === 'debito') acc.debito += total
-    else if (v.forma_pagamento === 'credito') acc.credito += total
-    else if (v.forma_pagamento === 'crediario') acc.crediario += total
-    return acc
-  }, { totalGeral: 0, qtdPedidos: 0, dinheiro: 0, pix: 0, debito: 0, credito: 0, crediario: 0 })
-
-  const adicionarItem = () => {
-    if (!produtoSelecionado || !quantidade) {
-      alert('Selecione um produto e a quantidade.')
-      return
-    }
-
-    const produto = produtos.find(p => p.id === parseInt(produtoSelecionado))
+  // Adiciona produto diretamente por objeto (usado também pelo scanner de código de barras)
+  const adicionarItemAoPedido = (produto, qtdParam = 1) => {
     if (!produto) return
 
-    const qtd = parseInt(quantidade)
-    if (qtd <= 0) {
-      alert('Informe uma quantidade válida.')
-      return
-    }
+    const qtd = parseInt(qtdParam)
+    if (qtd <= 0) return
 
     const itemExistente = itensVenda.find(i => i.produtoId === produto.id)
     const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
@@ -182,7 +159,7 @@ export default function Vendas() {
     const estoqueDisponivelReal = produto.estoque + (itemOriginal ? itemOriginal.quantidade : 0)
 
     if (estoqueDisponivelReal < qtdTotalPretendida) {
-      alert(`Estoque insuficiente! Disponível: ${estoqueDisponivelReal} unidades.`)
+      alert(`Estoque insuficiente de "${produto.nome}"! Disponível: ${estoqueDisponivelReal} un.`)
       return
     }
 
@@ -205,9 +182,107 @@ export default function Vendas() {
       setItensVenda([...itensVenda, novoItem])
     }
 
-    setProdutoSelecionado('')
+    setProdutoSelecionadoObj(null)
+    setTermoBuscaProduto('')
     setQuantidade('1')
   }
+
+  // Trata digitação de leitor USB comum ou Enter no campo
+  const handleKeyDownBusca = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      // Verifica se o texto bate exatamente com o código de barras
+      const porCodigo = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === termoBuscaProduto.trim())
+      if (porCodigo) {
+        adicionarItemAoPedido(porCodigo, quantidade)
+        return
+      }
+
+      if (produtoSelecionadoObj) {
+        adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
+        return
+      }
+
+      if (produtosFiltradosBusca.length === 1) {
+        adicionarItemAoPedido(produtosFiltradosBusca[0], quantidade)
+      }
+    }
+  }
+
+  // CARREGAR E INICIAR SCANNER DE CÂMERA DO CELULAR VIA CDN
+  const abrirScannerCamera = async () => {
+    setModalCameraAberto(true)
+
+    // Injeta script html5-qrcode de forma limpa e assíncrona
+    if (!window.Html5Qrcode) {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
+      script.onload = () => iniciarLeitorHtml5()
+      document.body.appendChild(script)
+    } else {
+      setTimeout(() => iniciarLeitorHtml5(), 200)
+    }
+  }
+
+  const iniciarLeitorHtml5 = () => {
+    try {
+      const html5QrCode = new window.Html5Qrcode("reader-camera")
+      setHtml5QrCodeScanner(html5QrCode)
+
+      const config = { fps: 10, qrbox: { width: 250, height: 160 } }
+      html5QrCode.start(
+        { facingMode: "environment" }, // Câmera traseira do celular
+        config,
+        (decodedText) => {
+          // Bipou código com sucesso!
+          if (navigator.vibrate) navigator.vibrate(100)
+
+          const prod = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === decodedText.trim())
+          if (prod) {
+            adicionarItemAoPedido(prod, 1)
+            fecharScannerCamera(html5QrCode)
+            alert(`✅ ${prod.nome} bipado e adicionado ao pedido!`)
+          } else {
+            alert(`Código lido: "${decodedText}", mas nenhum produto foi cadastrado com esse código.`)
+          }
+        },
+        () => {} // Erros de frame ignorados silenciosamente
+      ).catch(err => {
+        alert('Não foi possível acessar a câmera: ' + err)
+        setModalCameraAberto(false)
+      })
+    } catch (err) {
+      alert('Erro ao inicializar câmera: ' + err.message)
+      setModalCameraAberto(false)
+    }
+  }
+
+  const fecharScannerCamera = (instanciaScanner = html5QrCodeScanner) => {
+    if (instanciaScanner) {
+      try {
+        instanciaScanner.stop().then(() => {
+          instanciaScanner.clear()
+        }).catch(() => {})
+      } catch (e) {}
+    }
+    setModalCameraAberto(false)
+    setHtml5QrCodeScanner(null)
+  }
+
+  // Cliente e Cashback
+  const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
+  const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
+
+  const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
+  const descontoManual = parseFloat(desconto) || 0
+  const valorAbatidoCashback = usarCashback ? Math.min(subtotal - descontoManual, saldoCashbackDisponivel) : 0
+  const totalComDesconto = Math.max(0, subtotal - descontoManual - valorAbatidoCashback)
+  const novoCashbackGerado = totalComDesconto * (taxaCashback / 100)
+
+  const numValorRecebido = parseFloat(valorRecebido) || 0
+  const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto ? numValorRecebido - totalComDesconto : 0
+  const numValorEntrada = parseFloat(valorEntrada) || 0
+  const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
   const alterarQtdItem = (id, delta) => {
     setItensVenda(itensVenda.map(item => {
@@ -220,10 +295,9 @@ export default function Vendas() {
         const estoqueDisponivelReal = (produto ? produto.estoque : 0) + (itemOriginal ? itemOriginal.quantidade : 0)
 
         if (delta > 0 && novaQtd > estoqueDisponivelReal) {
-          alert(`Estoque máximo disponível atingido (${estoqueDisponivelReal} un)!`)
+          alert(`Estoque máximo atingido (${estoqueDisponivelReal} un)!`)
           return item
         }
-
         return { ...item, quantidade: novaQtd, subtotal: novaQtd * item.preco }
       }
       return item
@@ -264,51 +338,30 @@ export default function Vendas() {
   }
 
   const enviarComprovanteWhatsApp = (codigoVenda, nomeCli, telCli, totalVenda, novoSaldoCli, cashbackGanho) => {
-    if (!telCli) {
-      alert('Este cliente não possui telefone cadastrado!')
-      return
-    }
-
+    if (!telCli) return alert('Cliente não possui telefone!')
     const numLimpo = telCli.replace(/\D/g, '')
     const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
 
     let txtCashback = ''
     if (cashbackGanho > 0) {
-      txtCashback = `\n🎁 *Você ganhou R$ ${cashbackGanho.toFixed(2)} de Cashback!*\nSeu saldo acumulado agora é: *R$ ${novoSaldoCli.toFixed(2)}* para usar na próxima compra.\n`
+      txtCashback = `\n🎁 *Você ganhou R$ ${cashbackGanho.toFixed(2)} de Cashback!*\nSaldo acumulado: *R$ ${novoSaldoCli.toFixed(2)}* para a próxima compra.\n`
     }
 
     const mensagem = encodeURIComponent(
       `Olá, ${nomeCli}!\n` +
       `Obrigado por comprar conosco no *${DADOS_EMPRESA.nome}*!\n\n` +
       `Pedido: *${codigoVenda}*\n` +
-      `Total Pago: *R$ ${Number(totalVenda).toFixed(2)}*\n` +
+      `Total: *R$ ${Number(totalVenda).toFixed(2)}*\n` +
       txtCashback +
-      `\nQualquer dúvida, estamos à disposição!`
+      `\nQualquer dúvida, conte conosco!`
     )
-
     window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
   }
 
   const finalizarVenda = async () => {
-    if (itensVenda.length === 0) {
-      alert('Adicione itens à venda.')
-      return
-    }
-
-    if (formaPagamento === 'crediario' && !clienteSelecionado) {
-      alert('Atenção: Para registrar venda no Crediário, selecione um cliente cadastrado.')
-      return
-    }
-
-    if (formaPagamento === 'crediario' && numValorEntrada > totalComDesconto) {
-      alert('O valor de entrada não pode ser maior do que o total da venda!')
-      return
-    }
-
-    if (formaPagamento === 'dinheiro' && valorRecebido && numValorRecebido < totalComDesconto) {
-      alert(`O valor entregue (R$ ${numValorRecebido.toFixed(2)}) é menor que o total (R$ ${totalComDesconto.toFixed(2)})!`)
-      return
-    }
+    if (itensVenda.length === 0) return alert('Adicione itens à venda.')
+    if (formaPagamento === 'crediario' && !clienteSelecionado) return alert('Selecione um cliente para venda a prazo.')
+    if (formaPagamento === 'crediario' && numValorEntrada > totalComDesconto) return alert('Entrada maior que o total da venda!')
 
     setSalvando(true)
     const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
@@ -317,7 +370,6 @@ export default function Vendas() {
 
     try {
       if (vendaEditando) {
-        // Modo Edição
         const mapaOriginal = {}
         itensOriginais.forEach(i => { mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade })
         const mapaNovo = {}
@@ -345,7 +397,6 @@ export default function Vendas() {
         cancelarEdicao()
 
       } else {
-        // Nova Venda
         const { data: vendaCriada, error: erroVenda } = await supabase
           .from('vendas')
           .insert([{ total: totalComDesconto, forma_pagamento: formaPagamento, itens: itensVenda, cliente_id: clienteId }])
@@ -354,19 +405,14 @@ export default function Vendas() {
 
         if (erroVenda) throw erroVenda
 
-        // Processa Cashback (abate o saldo usado e soma o novo ganho)
         let saldoFinalCliente = saldoCashbackDisponivel
         if (clienteId) {
           if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
           saldoFinalCliente += novoCashbackGerado
 
-          await supabase
-            .from('clientes')
-            .update({ saldo_cashback: Math.max(0, saldoFinalCliente) })
-            .eq('id', clienteId)
+          await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
         }
 
-        // Crediário
         if (formaPagamento === 'crediario') {
           const dataVencimento = new Date()
           dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -381,24 +427,19 @@ export default function Vendas() {
           }])
         }
 
-        // Baixa regular do estoque
         for (const item of itensVenda) {
           const prodOriginal = produtos.find(p => p.id === item.produtoId)
           if (prodOriginal) {
-            await supabase
-              .from('produtos')
-              .update({ estoque: Math.max(0, (prodOriginal.estoque || 0) - item.quantidade) })
-              .eq('id', item.produtoId)
+            await supabase.from('produtos').update({ estoque: Math.max(0, (prodOriginal.estoque || 0) - item.quantidade) }).eq('id', item.produtoId)
           }
         }
 
         const codFormatado = formatarIdVenda(vendaCriada.id)
-
-        if (confirm(`Venda ${codFormatado} finalizada! Emitir comprovante PDF?`)) {
+        if (confirm(`Venda ${codFormatado} finalizada! Imprimir comprovante PDF?`)) {
           gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } })
         }
 
-        if (telefoneCliente && confirm('Enviar confirmação da compra pelo WhatsApp com os dados de Cashback?')) {
+        if (telefoneCliente && confirm('Enviar confirmação por WhatsApp com saldo de Cashback?')) {
           enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto, saldoFinalCliente, novoCashbackGerado)
         }
 
@@ -411,7 +452,7 @@ export default function Vendas() {
         setValorRecebido('')
       }
     } catch (err) {
-      alert('Erro ao processar venda: ' + err.message)
+      alert('Erro: ' + err.message)
     }
 
     setSalvando(false)
@@ -428,81 +469,57 @@ export default function Vendas() {
         .form-container, .table-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
         .form-section h2, .table-container h2 { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
         .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
-        .form-group { display: flex; flex-direction: column; flex: 1; }
+        .form-group { display: flex; flex-direction: column; flex: 1; position: relative; }
         .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
+
+        /* Dropdown inteligente de busca */
+        .busca-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 260px; overflow-y: auto; z-index: 50; }
+        .busca-item { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .busca-item:hover { background: #eff6ff; }
+        .busca-item-title { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
+        .busca-item-sub { font-size: 0.75rem; color: #64748b; }
+
         .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; }
-        .btn:active { transform: scale(0.98); }
         .btn-primary { background: #2563eb; color: #ffffff; }
         .btn-primary:hover { background: #1d4ed8; }
         .btn-success { background: #10b981; color: #ffffff; }
-        .btn-success:hover { background: #059669; }
         .btn-danger { background: #fee2e2; color: #dc2626; }
-        .btn-danger:hover { background: #fecaca; }
         .btn-secondary { background: #f1f5f9; color: #475569; }
-        .btn-secondary:hover { background: #e2e8f0; color: #0f172a; }
-        .btn-outline-dark { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
-        .btn-outline-dark:hover { background: #f8fafc; border-color: #94a3b8; }
+        .btn-camera { background: #0f172a; color: #ffffff; border-radius: 10px; height: 42px; padding: 0 1rem; gap: 6px; white-space: nowrap; }
+        .btn-camera:hover { background: #1e293b; }
         .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
         .btn-lg { padding: 0.85rem 1.75rem; font-size: 1.05rem; }
+
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1rem; border-bottom: 1px solid #e2e8f0; }
         td { padding: 1rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         tbody tr:hover { background: #f8fafc; }
-        .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-        .badge-info { background: #e0f2fe; color: #0369a1; }
-        .badge-warning { background: #fef3c7; color: #b45309; }
         .total-section { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-        .total-info { display: flex; align-items: baseline; gap: 0.5rem; }
-        .total-info span:first-child { font-size: 1rem; color: #64748b; font-weight: 500; }
-        .total-value { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.03em; color: #2563eb; }
-
-        /* Card de Fidelidade / Cashback */
+        .total-value { font-size: 1.85rem; font-weight: 800; color: #2563eb; }
         .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
-        .badge-tag-cashback { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 700; background: #fef08a; color: #854d0e; }
 
-        /* Modal Fechamento */
-        .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
-        .modal-sheet { background: #ffffff; width: 100%; max-width: 580px; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
-        .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
-        .modal-heading { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
-        .modal-sub { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
-        .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.25rem; }
-        .kpi-mini { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
-        .kpi-mini-title { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .kpi-mini-val { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
-        .caixa-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 6px; font-size: 0.9rem; }
-        .caixa-gaveta { background: #ecfdf5; border: 1px solid #a7f3d0; }
+        /* Modal Câmera / Leitor */
+        .modal-camera-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); display: flex; align-items: center; justify-content: center; z-index: 120; padding: 1rem; }
+        .modal-camera-box { background: #ffffff; width: 100%; max-width: 440px; border-radius: 18px; padding: 1.5rem; text-align: center; }
+        #reader-camera { width: 100%; border-radius: 12px; overflow: hidden; }
+
         @media (max-width: 768px) {
           .form-row { flex-direction: column; gap: 0.75rem; }
-          .kpi-row { grid-template-columns: 1fr; }
         }
       `}</style>
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">
-            {vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}
-          </h1>
-          <p className="page-subtitle">
-            <IconStore /> {DADOS_EMPRESA.nome}
-          </p>
+          <h1 className="page-title">{vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}</h1>
+          <p className="page-subtitle"><IconStore /> {DADOS_EMPRESA.nome}</p>
         </div>
-
-        <button 
-          className="btn btn-outline-dark" 
-          onClick={abrirFechamentoCaixa}
-          style={{ gap: '8px' }}
-        >
-          <IconReceipt /> Resumo do Dia (Caixa)
-        </button>
       </div>
 
       <div className="form-container">
         <div className="form-section">
           <h2>Dados da Venda</h2>
-          
           <div className="form-row">
             <div className="form-group" style={{ flex: 2 }}>
               <label>Cliente</label>
@@ -543,49 +560,73 @@ export default function Vendas() {
             )}
           </div>
 
-          {/* Card de Cashback disponível para o cliente */}
           {saldoCashbackDisponivel > 0 && (
             <div className="cashback-card-alert">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <IconSparkles />
                 <div>
-                  <strong style={{ color: '#854d0e', fontSize: '0.9rem' }}>
-                    {clienteAtual?.nome} possui R$ {saldoCashbackDisponivel.toFixed(2)} de saldo!
-                  </strong>
+                  <strong style={{ color: '#854d0e', fontSize: '0.9rem' }}>{clienteAtual?.nome} possui R$ {saldoCashbackDisponivel.toFixed(2)} de saldo!</strong>
                   <div style={{ fontSize: '0.78rem', color: '#a16207' }}>
-                    {usarCashback ? `Abatendo R$ ${valorAbatidoCashback.toFixed(2)} desta compra` : 'Deseja resgatar o cashback nesta venda?'}
+                    {usarCashback ? `Abatendo R$ ${valorAbatidoCashback.toFixed(2)} desta compra` : 'Deseja abater o saldo nesta compra?'}
                   </div>
                 </div>
               </div>
-
-              <button
-                type="button"
-                className={`btn btn-sm ${usarCashback ? 'btn-secondary' : 'btn-primary'}`}
-                onClick={() => setUsarCashback(!usarCashback)}
-              >
+              <button type="button" className={`btn btn-sm ${usarCashback ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setUsarCashback(!usarCashback)}>
                 {usarCashback ? '✕ Não usar agora' : '✨ Usar Saldo'}
               </button>
             </div>
           )}
         </div>
 
+        {/* BUSCA RÁPIDA + CÂMERA DO CELULAR */}
         <div className="form-section">
-          <h2>Adicionar Item</h2>
-          
+          <h2>Adicionar Produtos</h2>
           <div className="form-row">
-            <div className="form-group" style={{ flex: 3 }}>
-              <label>Produto</label>
-              <select value={produtoSelecionado} onChange={(e) => setProdutoSelecionado(e.target.value)}>
-                <option value="">Selecione um produto</option>
-                {produtos.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome} — R$ {Number(p.preco).toFixed(2)} (Estoque: {p.estoque})
-                  </option>
-                ))}
-              </select>
+            <div className="form-group" style={{ flex: 3 }} ref={dropdownRef}>
+              <label>Buscar Produto (Nome ou Código de Barras)</label>
+              <input 
+                type="text" 
+                placeholder="Digite o nome, código ou bipe no teclado..."
+                value={termoBuscaProduto}
+                onChange={e => { setTermoBuscaProduto(e.target.value); setMostrarDropdownBusca(true); }}
+                onFocus={() => setMostrarDropdownBusca(true)}
+                onKeyDown={handleKeyDownBusca}
+              />
+
+              {mostrarDropdownBusca && produtosFiltradosBusca.length > 0 && (
+                <div className="busca-dropdown">
+                  {produtosFiltradosBusca.map(prod => (
+                    <div 
+                      key={prod.id} 
+                      className="busca-item"
+                      onClick={() => selecionarProdutoBusca(prod)}
+                    >
+                      <div>
+                        <div className="busca-item-title">{prod.nome}</div>
+                        <div className="busca-item-sub">
+                          Estoque: {prod.estoque || 0} un {prod.codigo_barras ? `• Cód: ${prod.codigo_barras}` : ''}
+                        </div>
+                      </div>
+                      <strong style={{ color: '#2563eb' }}>R$ {Number(prod.preco).toFixed(2)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="form-group" style={{ flex: 1 }}>
+            {/* BOTÃO DA CÂMERA DO CELULAR */}
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <button 
+                type="button" 
+                className="btn btn-camera" 
+                onClick={abrirScannerCamera}
+                title="Bipar código com a câmera do celular"
+              >
+                <IconCamera /> Bipar com Câmera
+              </button>
+            </div>
+
+            <div className="form-group" style={{ flex: 0.8 }}>
               <label>Qtd</label>
               <input 
                 type="number" 
@@ -596,7 +637,18 @@ export default function Vendas() {
             </div>
           </div>
 
-          <button className="btn btn-primary" onClick={adicionarItem} style={{ gap: '6px' }}>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => {
+              if (!produtoSelecionadoObj && termoBuscaProduto) {
+                const exato = produtos.find(p => p.nome.toLowerCase() === termoBuscaProduto.toLowerCase() || (p.codigo_barras && p.codigo_barras === termoBuscaProduto))
+                if (exato) return adicionarItemAoPedido(exato, quantidade)
+              }
+              if (!produtoSelecionadoObj) return alert('Selecione um produto na lista ou bipe o código.')
+              adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
+            }} 
+            style={{ gap: '6px' }}
+          >
             <IconPlus /> Adicionar ao Pedido
           </button>
         </div>
@@ -622,26 +674,14 @@ export default function Vendas() {
                   <td>R$ {item.preco.toFixed(2)}</td>
                   <td style={{ textAlign: 'center' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '8px' }}>
-                      <button 
-                        style={{ border: 'none', background: '#ffffff', borderRadius: '4px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        onClick={() => alterarQtdItem(item.id, -1)}
-                      >
-                        <IconMinus />
-                      </button>
-                      <span style={{ fontWeight: 600, minWidth: '18px' }}>{item.quantidade}</span>
-                      <button 
-                        style={{ border: 'none', background: '#ffffff', borderRadius: '4px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        onClick={() => alterarQtdItem(item.id, 1)}
-                      >
-                        <IconPlus size={14} color="#475569" />
-                      </button>
+                      <button style={{ border: 'none', background: '#fff', borderRadius: '4px', width: '24px', height: '24px', cursor: 'pointer' }} onClick={() => alterarQtdItem(item.id, -1)}><IconMinus /></button>
+                      <span style={{ fontWeight: 600 }}>{item.quantidade}</span>
+                      <button style={{ border: 'none', background: '#fff', borderRadius: '4px', width: '24px', height: '24px', cursor: 'pointer' }} onClick={() => alterarQtdItem(item.id, 1)}><IconPlus size={14} color="#475569" /></button>
                     </div>
                   </td>
                   <td>R$ {item.subtotal.toFixed(2)}</td>
                   <td style={{ textAlign: 'center' }}>
-                    <button className="btn btn-sm btn-danger" onClick={() => removerItem(item.id)} style={{ gap: '4px' }}>
-                      <IconTrash /> Remover
-                    </button>
+                    <button className="btn btn-sm btn-danger" onClick={() => removerItem(item.id)}><IconTrash /></button>
                   </td>
                 </tr>
               ))}
@@ -651,17 +691,8 @@ export default function Vendas() {
           <div style={{ marginTop: '1.5rem', background: '#f8fafc', padding: '1.25rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>
-                  DESCONTO MANUAL (R$):
-                </label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  min="0"
-                  value={desconto} 
-                  onChange={(e) => setDesconto(e.target.value)}
-                  style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-                />
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>DESCONTO MANUAL (R$):</label>
+                <input type="number" step="0.01" min="0" value={desconto} onChange={(e) => setDesconto(e.target.value)} style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
               </div>
 
               {usarCashback && (
@@ -677,205 +708,31 @@ export default function Vendas() {
                   <strong style={{ fontSize: '1.1rem', color: '#16a34a' }}>+ R$ {novoCashbackGerado.toFixed(2)}</strong>
                 </div>
               )}
-
-              {formaPagamento === 'dinheiro' && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>
-                    VALOR RECEBIDO (R$):
-                  </label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0,00"
-                    value={valorRecebido} 
-                    onChange={(e) => setValorRecebido(e.target.value)}
-                    style={{ width: '140px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-                  />
-                </div>
-              )}
-
-              {formaPagamento === 'dinheiro' && troco > 0 && (
-                <div style={{ background: '#ecfdf5', padding: '8px 16px', borderRadius: '10px', border: '1px solid #10b981' }}>
-                  <span style={{ fontSize: '11px', color: '#047857', display: 'block', fontWeight: 600 }}>TROCO A DEVOLVER:</span>
-                  <strong style={{ fontSize: '1.25rem', color: '#047857' }}>R$ {troco.toFixed(2)}</strong>
-                </div>
-              )}
-
-              {formaPagamento === 'crediario' && (
-                <div style={{ background: '#fffbeb', padding: '8px 16px', borderRadius: '10px', border: '1px solid #f59e0b' }}>
-                  <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 600 }}>RESTANTE A COBRAR:</span>
-                  <strong style={{ fontSize: '1.2rem', color: '#92400e' }}>R$ {saldoRestanteCrediario.toFixed(2)}</strong>
-                </div>
-              )}
             </div>
 
             <div className="total-section" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
-              <div className="total-info">
-                <span>Total a Pagar:</span>
+              <div>
+                <span style={{ fontSize: '1rem', color: '#64748b' }}>Total a Pagar: </span>
                 <span className="total-value">R$ {totalComDesconto.toFixed(2)}</span>
               </div>
-              <button 
-                className="btn btn-success btn-lg" 
-                onClick={finalizarVenda}
-                disabled={salvando}
-                style={{ gap: '8px' }}
-              >
-                {salvando ? 'Processando...' : (
-                  <>
-                    <IconCheck />
-                    {vendaEditando ? 'Salvar Alterações' : 'Finalizar Venda'}
-                  </>
-                )}
+              <button className="btn btn-success btn-lg" onClick={finalizarVenda} disabled={salvando} style={{ gap: '8px' }}>
+                <IconCheck /> {salvando ? 'Processando...' : (vendaEditando ? 'Salvar Alterações' : 'Finalizar Venda')}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tabela de Vendas */}
-      {vendas.length > 0 && (
-        <div className="table-container">
-          <h2>Últimas Vendas Realizadas</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Código ID</th>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Total</th>
-                <th>Forma Pagto</th>
-                <th style={{ textAlign: 'center' }}>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vendas.map(venda => {
-                const cod = formatarIdVenda(venda.id)
-                const tel = venda.clientes?.telefone
-                const nome = venda.clientes?.nome || 'Cliente'
-                const isCrediario = venda.forma_pagamento === 'crediario'
-
-                return (
-                  <tr key={venda.id}>
-                    <td><strong>{cod}</strong></td>
-                    <td>{new Date(venda.created_at).toLocaleString('pt-BR')}</td>
-                    <td>{venda.clientes?.nome || 'Cliente Avulso'}</td>
-                    <td>R$ {Number(venda.total).toFixed(2)}</td>
-                    <td>
-                      <span className={`badge ${isCrediario ? 'badge-warning' : 'badge-info'}`}>
-                        {isCrediario ? 'CREDIÁRIO' : venda.forma_pagamento?.toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button 
-                          className="btn btn-sm btn-secondary" 
-                          onClick={() => iniciarEdicao(venda)}
-                          title="Editar venda"
-                          style={{ gap: '4px' }}
-                        >
-                          <IconEdit /> Editar
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-primary" 
-                          onClick={() => gerarComprovanteVenda(venda)}
-                          title="Comprovante PDF"
-                          style={{ gap: '4px' }}
-                        >
-                          <IconFileText /> PDF
-                        </button>
-                        {tel && (
-                          <button 
-                            className="btn btn-sm btn-success" 
-                            onClick={() => enviarComprovanteWhatsApp(cod, nome, tel, venda.total, Number(venda.clientes?.saldo_cashback || 0), 0)}
-                            title="Enviar WhatsApp"
-                            style={{ gap: '4px' }}
-                          >
-                            <IconWhatsApp /> Zap
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Modal Fechamento Caixa */}
-      {modalCaixaAberto && (
-        <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
-            <div className="modal-top">
-              <div>
-                <h3 className="modal-heading">Fechamento do Dia</h3>
-                <p className="modal-sub">
-                  {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
-                </p>
-              </div>
-              <button 
-                onClick={() => setModalCaixaAberto(false)} 
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {carregandoCaixa ? (
-              <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>Calculando movimentações de hoje...</p>
-            ) : (
-              <>
-                <div className="kpi-row">
-                  <div className="kpi-mini">
-                    <span className="kpi-mini-title">Total Faturado Hoje</span>
-                    <span className="kpi-mini-val" style={{ color: '#2563eb' }}>R$ {resumoTotais.totalGeral.toFixed(2)}</span>
-                  </div>
-                  <div className="kpi-mini">
-                    <span className="kpi-mini-title">Vendas Concluídas</span>
-                    <span className="kpi-mini-val">{resumoTotais.qtdPedidos} pedidos</span>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>
-                    Conferência por Meio de Pagamento
-                  </span>
-                  <div className="caixa-item caixa-gaveta">
-                    <div>
-                      <strong style={{ color: '#047857', display: 'block' }}>💵 Dinheiro em Gaveta</strong>
-                      <span style={{ fontSize: '0.75rem', color: '#065f46' }}>Saldo físico em cédulas/moedas</span>
-                    </div>
-                    <strong style={{ color: '#047857', fontSize: '1.1rem' }}>R$ {resumoTotais.dinheiro.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <span>⚡ PIX</span>
-                    <strong>R$ {resumoTotais.pix.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <span>💳 Cartão de Débito</span>
-                    <strong>R$ {resumoTotais.debito.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <span>💳 Cartão de Crédito</span>
-                    <strong>R$ {resumoTotais.credito.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
-                    <div>
-                      <strong style={{ color: '#b45309', display: 'block' }}>📝 Crediário (A Prazo)</strong>
-                      <span style={{ fontSize: '0.75rem', color: '#92400e' }}>Lançado em Contas a Receber</span>
-                    </div>
-                    <strong style={{ color: '#b45309' }}>R$ {resumoTotais.crediario.toFixed(2)}</strong>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
-                  <button className="btn btn-primary" onClick={() => setModalCaixaAberto(false)}>
-                    Fechar Conferência
-                  </button>
-                </div>
-              </>
-            )}
+      {/* MODAL SCANNER DE CÂMERA DO CELULAR */}
+      {modalCameraAberto && (
+        <div className="modal-camera-overlay">
+          <div className="modal-camera-box">
+            <h3 style={{ marginBottom: '8px', color: '#0f172a' }}>📷 Aponte a Câmera para o Código</h3>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '14px' }}>Posicione o código de barras no centro do quadrado</p>
+            <div id="reader-camera"></div>
+            <button className="btn btn-secondary" onClick={() => fecharScannerCamera()} style={{ marginTop: '1rem', width: '100%' }}>
+              ✕ Fechar Leitor
+            </button>
           </div>
         </div>
       )}
