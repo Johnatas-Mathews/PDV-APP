@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import Dashboard from './pages/Dashboard'
-import Vendas from './pages/Vendas' // PDV
-import HistoricoVendas from './pages/HistoricoVendas' // Vendas
+import Vendas from './pages/Vendas'
+import HistoricoVendas from './pages/HistoricoVendas'
 import Condicionais from './pages/Condicionais'
 import Compras from './pages/Compras'
 import Clientes from './pages/Clientes'
@@ -95,38 +96,185 @@ const IconClose = () => (
   </svg>
 )
 
+const IconUser = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+  </svg>
+)
+
 const IconLoja = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
   </svg>
 )
 
-export default function App() {
-  const [sidebarAberta, setSidebarAberta] = useState(true)
+// COMPONENTE DO MODAL DE IDENTIFICAÇÃO / PIN
+function ModalLoginOperador() {
+  const { modalLoginAberto, setModalLoginAberto, usuariosDisponiveis, autenticar, loadingAuth, operador } = useAuth()
+  const [usuarioSel, setUsuarioSel] = useState('')
+  const [pin, setPin] = useState('')
 
-  const links = [
-    { to: '/', label: 'Dashboard', icon: IconDashboard },
-    { to: '/pdv', label: 'PDV', icon: IconPDV },
-    { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico },
-    { to: '/condicionais', label: 'Condicionais (Mala)', icon: IconCondicionais },
-    { to: '/compras', label: 'Compras & Reposição', icon: IconCompras },
-    { to: '/produtos', label: 'Produtos', icon: IconProdutos },
-    { to: '/clientes', label: 'Clientes', icon: IconClientes },
-    { to: '/fornecedores', label: 'Fornecedores', icon: IconFornecedores },
-    { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas },
-    { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios },
-    { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig },
-  ]
+  if (!modalLoginAberto) return null
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    if (!usuarioSel) return alert('Selecione o operador.')
+    if (!pin) return alert('Digite o PIN de 4 dígitos.')
+
+    const ok = await autenticar(usuarioSel, pin)
+    if (ok) {
+      setPin('')
+    }
+  }
+
+  const handleAddDigit = (d) => {
+    if (pin.length < 6) setPin(prev => prev + d)
+  }
+
+  const handleBackspace = () => {
+    setPin(prev => prev.slice(0, -1))
+  }
 
   return (
-    <BrowserRouter>
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(15, 23, 42, 0.75)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 200,
+      backdropFilter: 'blur(3px)',
+      padding: '1rem'
+    }}>
+      <div style={{
+        background: '#ffffff',
+        width: '100%',
+        maxWidth: '360px',
+        borderRadius: '20px',
+        padding: '1.75rem',
+        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)',
+        textAlign: 'center'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>Identificar Operador</h3>
+          {operador && (
+            <button onClick={() => setModalLoginAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>✕</button>
+          )}
+        </div>
+
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+              Selecione seu Nome
+            </label>
+            <select
+              value={usuarioSel}
+              onChange={e => setUsuarioSel(e.target.value)}
+              style={{ width: '100%', height: '44px', padding: '0 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}
+              required
+            >
+              <option value="">-- Quem está operando? --</option>
+              {usuariosDisponiveis.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.nome} ({u.perfil === 'admin' ? 'Administrador' : 'Vendedor'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', textAlign: 'left' }}>
+              PIN de Acesso
+            </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="••••"
+              value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+              style={{ width: '100%', height: '48px', fontSize: '1.75rem', textAlign: 'center', letterSpacing: '0.3em', borderRadius: '10px', border: '1px solid #cbd5e1', fontWeight: 800 }}
+              required
+            />
+          </div>
+
+          {/* Teclado Touch Numérico para Celular / Balcão */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '1.25rem' }}>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => handleAddDigit(String(num))}
+                style={{ height: '46px', fontSize: '1.2rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
+              >
+                {num}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPin('')}
+              style={{ height: '46px', fontSize: '0.8rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAddDigit('0')}
+              style={{ height: '46px', fontSize: '1.2rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
+            >
+              0
+            </button>
+            <button
+              type="button"
+              onClick={handleBackspace}
+              style={{ height: '46px', fontSize: '1.1rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
+            >
+              ⌫
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loadingAuth}
+            style={{ width: '100%', height: '46px', background: '#2563eb', color: '#ffffff', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
+          >
+            {loadingAuth ? 'Validando...' : 'Acessar Caixa'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function MainAppLayout() {
+  const [sidebarAberta, setSidebarAberta] = useState(true)
+  const { operador, isAdmin, setModalLoginAberto, logout } = useAuth()
+
+  // Links do menu filtrados por permissão
+  const todosOsLinks = [
+    { to: '/', label: 'Dashboard', icon: IconDashboard, apenasAdmin: true },
+    { to: '/pdv', label: 'PDV', icon: IconPDV, apenasAdmin: false },
+    { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico, apenasAdmin: false },
+    { to: '/condicionais', label: 'Condicionais (Mala)', icon: IconCondicionais, apenasAdmin: false },
+    { to: '/compras', label: 'Compras & Reposição', icon: IconCompras, apenasAdmin: true },
+    { to: '/produtos', label: 'Produtos', icon: IconProdutos, apenasAdmin: false },
+    { to: '/clientes', label: 'Clientes', icon: IconClientes, apenasAdmin: false },
+    { to: '/fornecedores', label: 'Fornecedores', icon: IconFornecedores, apenasAdmin: true },
+    { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas, apenasAdmin: true },
+    { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios, apenasAdmin: true },
+    { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig, apenasAdmin: true },
+  ]
+
+  const linksVisiveis = todosOsLinks.filter(item => !item.apenasAdmin || isAdmin)
+
+  return (
+    <div className="app-layout">
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; color: #0f172a; overflow-x: hidden; }
-        
         .app-layout { display: flex; min-height: 100vh; background-color: #f8fafc; position: relative; }
         
-        /* Botão Hambúrguer: SÓ APARECE QUANDO A SIDEBAR ESTIVER FECHADA */
         .btn-reabrir-sidebar {
           position: fixed;
           top: 14px;
@@ -147,7 +295,6 @@ export default function App() {
         }
         .btn-reabrir-sidebar:hover { background: #1e293b; color: #2563eb; }
 
-        /* Sidebar com Animação Fluida */
         .app-sidebar {
           width: 250px;
           min-width: 250px;
@@ -164,7 +311,6 @@ export default function App() {
           z-index: 90;
         }
 
-        /* Quando a Sidebar está Oculta */
         .app-sidebar.recolhida {
           margin-left: -250px;
         }
@@ -175,19 +321,7 @@ export default function App() {
         .brand-name { display: block; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.05em; color: #ffffff; }
         .brand-sub { display: block; font-size: 0.65rem; color: #64748b; font-weight: 600; }
         
-        /* Botão X exclusivo da direita dentro da sidebar */
-        .btn-fechar-sidebar {
-          background: transparent;
-          border: none;
-          color: #94a3b8;
-          cursor: pointer;
-          padding: 6px;
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.15s;
-        }
+        .btn-fechar-sidebar { background: transparent; border: none; color: #94a3b8; cursor: pointer; padding: 6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
         .btn-fechar-sidebar:hover { color: #ffffff; background: #1e293b; }
 
         .nav-section-title { display: block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; color: #475569; padding: 0 0.75rem 0.5rem; }
@@ -195,7 +329,24 @@ export default function App() {
         .sidebar-link:hover { color: #ffffff; background: #1e293b; }
         .sidebar-link.active { color: #ffffff; background: #2563eb; }
 
-        /* Área Principal */
+        /* Rodapé com Card do Operador Ativo */
+        .sidebar-user-box {
+          margin-top: auto;
+          background: #111827;
+          border: 1px solid #1f2937;
+          border-radius: 12px;
+          padding: 10px 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .user-info { display: flex; align-items: center; gap: 8px; }
+        .user-avatar { width: 30px; height: 30px; border-radius: 50%; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; }
+        .user-name { font-size: 0.82rem; font-weight: 700; color: #ffffff; display: block; }
+        .user-role { font-size: 0.68rem; color: #9ca3af; display: block; text-transform: uppercase; }
+        .btn-trocar-user { background: transparent; border: none; color: #60a5fa; cursor: pointer; font-size: 0.72rem; font-weight: 700; }
+        .btn-trocar-user:hover { text-decoration: underline; }
+
         .app-main-content {
           flex: 1;
           padding: 2rem;
@@ -204,125 +355,114 @@ export default function App() {
           transition: all 0.25s ease;
         }
 
-        /* Se a sidebar estiver fechada no Desktop, deixa margem para o botão de abrir */
-        .app-main-content.sidebar-fechada {
-          padding-left: 4.5rem;
-        }
-
-        /* Overlay Escuro para Celular */
-        .sidebar-backdrop {
-          display: none;
-        }
+        .app-main-content.sidebar-fechada { padding-left: 4.5rem; }
+        .sidebar-backdrop { display: none; }
 
         @media (max-width: 768px) {
-          .app-sidebar {
-            position: fixed;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            transform: translateX(0);
-            box-shadow: 10px 0 25px rgba(0,0,0,0.5);
-          }
-          .app-sidebar.recolhida {
-            transform: translateX(-100%);
-            margin-left: 0;
-          }
-          .sidebar-backdrop.visivel {
-            display: block;
-            position: fixed;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.65);
-            z-index: 85;
-            backdrop-filter: blur(2px);
-          }
-          .app-main-content {
-            padding: 4.5rem 1rem 1.5rem 1rem;
-          }
-          .app-main-content.sidebar-fechada {
-            padding-left: 1rem;
-          }
+          .app-sidebar { position: fixed; top: 0; bottom: 0; left: 0; transform: translateX(0); box-shadow: 10px 0 25px rgba(0,0,0,0.5); }
+          .app-sidebar.recolhida { transform: translateX(-100%); margin-left: 0; }
+          .sidebar-backdrop.visivel { display: block; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); z-index: 85; backdrop-filter: blur(2px); }
+          .app-main-content { padding: 4.5rem 1rem 1.5rem 1rem; }
+          .app-main-content.sidebar-fechada { padding-left: 1rem; }
         }
       `}</style>
 
-      <div className="app-layout">
-        {/* Botão Hambúrguer: SÓ APARECE QUANDO A SIDEBAR ESTIVER FECHADA */}
-        {!sidebarAberta && (
-          <button 
-            className="btn-reabrir-sidebar" 
-            onClick={() => setSidebarAberta(true)} 
-            title="Abrir menu lateral"
-          >
-            <IconMenuHamburger />
-          </button>
-        )}
+      {/* Botão Hambúrguer */}
+      {!sidebarAberta && (
+        <button className="btn-reabrir-sidebar" onClick={() => setSidebarAberta(true)} title="Abrir menu">
+          <IconMenuHamburger />
+        </button>
+      )}
 
-        {/* Backdrop no mobile */}
-        <div 
-          className={`sidebar-backdrop ${sidebarAberta ? 'visivel' : ''}`} 
-          onClick={() => setSidebarAberta(false)}
-        />
+      {/* Backdrop Mobile */}
+      <div 
+        className={`sidebar-backdrop ${sidebarAberta ? 'visivel' : ''}`} 
+        onClick={() => setSidebarAberta(false)}
+      />
 
-        {/* Barra Lateral */}
-        <aside className={`app-sidebar ${sidebarAberta ? '' : 'recolhida'}`}>
-          <div className="sidebar-brand">
-            <div className="brand-content">
-              <div className="brand-badge">
-                <IconLoja />
-              </div>
-              <div className="brand-text">
-                <span className="brand-name">TECCO</span>
-                <span className="brand-sub">PDV SISTEMA</span>
-              </div>
+      {/* Sidebar */}
+      <aside className={`app-sidebar ${sidebarAberta ? '' : 'recolhida'}`}>
+        <div className="sidebar-brand">
+          <div className="brand-content">
+            <div className="brand-badge">
+              <IconLoja />
             </div>
-
-            {/* Único botão de fechar (X) da barra */}
-            <button 
-              className="btn-fechar-sidebar" 
-              onClick={() => setSidebarAberta(false)} 
-              title="Ocultar menu lateral"
-            >
-              <IconClose />
-            </button>
+            <div className="brand-text">
+              <span className="brand-name">TECCO</span>
+              <span className="brand-sub">PDV SISTEMA</span>
+            </div>
           </div>
 
-          <nav className="sidebar-nav">
-            <span className="nav-section-title">MENU PRINCIPAL</span>
-            {links.map((item) => {
-              const Icon = item.icon
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => {
-                    if (window.innerWidth <= 768) setSidebarAberta(false)
-                  }}
-                  className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-                >
-                  <Icon />
-                  <span>{item.label}</span>
-                </NavLink>
-              )
-            })}
-          </nav>
-        </aside>
+          <button className="btn-fechar-sidebar" onClick={() => setSidebarAberta(false)} title="Ocultar menu">
+            <IconClose />
+          </button>
+        </div>
 
-        {/* Conteúdo da Página */}
-        <main className={`app-main-content ${sidebarAberta ? '' : 'sidebar-fechada'}`}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/pdv" element={<Vendas />} />
-            <Route path="/vendas" element={<HistoricoVendas />} />
-            <Route path="/condicionais" element={<Condicionais />} />
-            <Route path="/compras" element={<Compras />} />
-            <Route path="/produtos" element={<Produtos />} />
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/fornecedores" element={<Fornecedores />} />
-            <Route path="/contas-receber" element={<ContasReceber />} />
-            <Route path="/relatorios" element={<Relatorios />} />
-            <Route path="/configuracoes" element={<Configuracoes />} />
-          </Routes>
-        </main>
-      </div>
+        <nav className="sidebar-nav">
+          <span className="nav-section-title">MENU PRINCIPAL</span>
+          {linksVisiveis.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => {
+                  if (window.innerWidth <= 768) setSidebarAberta(false)
+                }}
+                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+              >
+                <Icon />
+                <span>{item.label}</span>
+              </NavLink>
+            )
+          })}
+        </nav>
+
+        {/* Informações do Operador Ativo no Rodapé */}
+        <div className="sidebar-user-box">
+          <div className="user-info">
+            <div className="user-avatar">
+              <IconUser />
+            </div>
+            <div>
+              <span className="user-name">{operador?.nome || 'Operador'}</span>
+              <span className="user-role">{operador?.perfil === 'admin' ? 'Gerente' : 'Vendedor'}</span>
+            </div>
+          </div>
+          <button className="btn-trocar-user" onClick={() => setModalLoginAberto(true)}>
+            Trocar
+          </button>
+        </div>
+      </aside>
+
+      {/* Rotas com Proteção de Perfil */}
+      <main className={`app-main-content ${sidebarAberta ? '' : 'sidebar-fechada'}`}>
+        <Routes>
+          <Route path="/" element={isAdmin ? <Dashboard /> : <Navigate to="/pdv" replace />} />
+          <Route path="/pdv" element={<Vendas />} />
+          <Route path="/vendas" element={<HistoricoVendas />} />
+          <Route path="/condicionais" element={<Condicionais />} />
+          <Route path="/compras" element={isAdmin ? <Compras /> : <Navigate to="/pdv" replace />} />
+          <Route path="/produtos" element={<Produtos />} />
+          <Route path="/clientes" element={<Clientes />} />
+          <Route path="/fornecedores" element={isAdmin ? <Fornecedores /> : <Navigate to="/pdv" replace />} />
+          <Route path="/contas-receber" element={isAdmin ? <ContasReceber /> : <Navigate to="/pdv" replace />} />
+          <Route path="/relatorios" element={isAdmin ? <Relatorios /> : <Navigate to="/pdv" replace />} />
+          <Route path="/configuracoes" element={isAdmin ? <Configuracoes /> : <Navigate to="/pdv" replace />} />
+        </Routes>
+      </main>
+
+      <ModalLoginOperador />
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <MainAppLayout />
+      </AuthProvider>
     </BrowserRouter>
   )
 }
