@@ -39,11 +39,18 @@ const IconEdit = () => (
   </svg>
 )
 
+const IconSearch = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+  </svg>
+)
+
 export default function ContasReceber() {
   const [contas, setContas] = useState([])
   const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
+  const [busca, setBusca] = useState('')
   
   // Modais
   const [contaModalHist, setContaModalHist] = useState(null)
@@ -114,7 +121,7 @@ export default function ContasReceber() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Clientes filtrados conforme digitação no modal
+  // Clientes filtrados conforme digitação no modal de criação
   const clientesFiltradosBusca = clientes.filter(c => {
     if (!termoBuscaCliente) return true
     const t = termoBuscaCliente.toLowerCase()
@@ -330,6 +337,16 @@ export default function ContasReceber() {
     }
   }
 
+  // Filtragem combinada de busca na lista principal (Nome, Telefone ou Descrição)
+  const contasFiltradas = contas.filter(c => {
+    if (!busca.trim()) return true
+    const termo = busca.toLowerCase()
+    const nomeCli = (c.clientes?.nome || '').toLowerCase()
+    const telCli = (c.clientes?.telefone || '').toLowerCase()
+    const desc = (c.descricao || '').toLowerCase()
+    return nomeCli.includes(termo) || telCli.includes(termo) || desc.includes(termo)
+  })
+
   const totalEmAberto = contas
     .filter(c => c.status === 'pendente')
     .reduce((sum, c) => sum + (Number(c.valor || 0) - Number(c.valor_pago || 0)), 0)
@@ -346,9 +363,14 @@ export default function ContasReceber() {
         .summary-card span { font-size: 0.7rem; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.05em; }
         .summary-card strong { font-size: 1.45rem; font-weight: 800; color: #c2410c; letter-spacing: -0.02em; }
         
-        .filter-bar { display: flex; gap: 8px; margin-bottom: 1.25rem; overflow-x: auto; padding-bottom: 4px; }
+        /* Barra de Filtro e Busca Integrada */
+        .controls-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .filter-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
         .filter-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .filter-btn.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
+        
+        .search-box-cr { display: flex; align-items: center; gap: 8px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; height: 40px; width: 320px; }
+        .search-box-cr input { border: none; outline: none; width: 100%; font-size: 0.88rem; color: #0f172a; background: transparent; }
         
         .table-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: 0 1px 3px rgba(0,0,0,0.02); width: 100%; }
         table { width: 100%; border-collapse: collapse; text-align: left; min-width: 820px; }
@@ -378,7 +400,6 @@ export default function ContasReceber() {
         .form-group-modal input, .form-group-modal select { height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.9rem; color: #0f172a; }
         .form-group-modal input:focus { outline: none; border-color: #2563eb; }
 
-        /* Dropdown Autocomplete de Clientes */
         .cli-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; z-index: 50; margin-top: 4px; }
         .cli-item { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; }
         .cli-item:hover { background: #eff6ff; }
@@ -387,6 +408,8 @@ export default function ContasReceber() {
         @media (max-width: 768px) {
           .cr-header { flex-direction: column; align-items: stretch; }
           .summary-card { width: 100%; }
+          .controls-row { flex-direction: column; align-items: stretch; }
+          .search-box-cr { width: 100%; }
         }
       `}</style>
 
@@ -408,32 +431,55 @@ export default function ContasReceber() {
         </div>
       </div>
 
-      <div className="filter-bar">
-        <button 
-          className={`filter-btn ${filtro === 'pendente' ? 'active' : ''}`}
-          onClick={() => setFiltro('pendente')}
-        >
-          Pendentes
-        </button>
-        <button 
-          className={`filter-btn ${filtro === 'pago' ? 'active' : ''}`}
-          onClick={() => setFiltro('pago')}
-        >
-          Quitadas
-        </button>
-        <button 
-          className={`filter-btn ${filtro === 'todas' ? 'active' : ''}`}
-          onClick={() => setFiltro('todas')}
-        >
-          Todas
-        </button>
+      {/* BARRA DE FILTROS E BUSCADOR RÁPIDO */}
+      <div className="controls-row">
+        <div className="filter-bar">
+          <button 
+            className={`filter-btn ${filtro === 'pendente' ? 'active' : ''}`}
+            onClick={() => setFiltro('pendente')}
+          >
+            Pendentes
+          </button>
+          <button 
+            className={`filter-btn ${filtro === 'pago' ? 'active' : ''}`}
+            onClick={() => setFiltro('pago')}
+          >
+            Quitadas
+          </button>
+          <button 
+            className={`filter-btn ${filtro === 'todas' ? 'active' : ''}`}
+            onClick={() => setFiltro('todas')}
+          >
+            Todas
+          </button>
+        </div>
+
+        <div className="search-box-cr">
+          <IconSearch />
+          <input 
+            type="text" 
+            placeholder="Buscar por cliente, telefone ou venda..." 
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+          />
+          {busca && (
+            <button 
+              onClick={() => setBusca('')} 
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', fontSize: '13px' }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="table-box">
         {loading ? (
           <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Carregando dados...</p>
-        ) : contas.length === 0 ? (
-          <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Nenhum título encontrado.</p>
+        ) : contasFiltradas.length === 0 ? (
+          <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+            {busca ? `Nenhum título encontrado com "${busca}".` : 'Nenhum título encontrado.'}
+          </p>
         ) : (
           <table>
             <thead>
@@ -449,7 +495,7 @@ export default function ContasReceber() {
               </tr>
             </thead>
             <tbody>
-              {contas.map(conta => {
+              {contasFiltradas.map(conta => {
                 const total = Number(conta.valor || 0)
                 const pago = Number(conta.valor_pago || 0)
                 const saldo = Math.max(0, total - pago)
@@ -518,7 +564,6 @@ export default function ContasReceber() {
             </div>
 
             <form onSubmit={salvarNovoTituloManual}>
-              {/* CAMPO COM AUTOCOMPLETE */}
               <div className="form-group-modal" ref={dropdownCliRef}>
                 <label>Pesquisar Cliente (Digite o Nome, Telefone ou CPF)</label>
                 {!clienteSelecionadoObj ? (
