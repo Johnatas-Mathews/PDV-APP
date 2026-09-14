@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas' // PDV
 import HistoricoVendas from './pages/HistoricoVendas' // Vendas
+import Condicionais from './pages/Condicionais' // Condicionais (Mala de Roupas)
 import Compras from './pages/Compras'
 import Clientes from './pages/Clientes'
 import Fornecedores from './pages/Fornecedores'
@@ -32,6 +33,12 @@ const IconVendasHistorico = () => (
     <line x1="16" y1="13" x2="8" y2="13" />
     <line x1="16" y1="17" x2="8" y2="17" />
     <line x1="10" y1="9" x2="8" y2="9" />
+  </svg>
+)
+
+const IconCondicionais = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" />
   </svg>
 )
 
@@ -93,6 +100,7 @@ export default function App() {
     { to: '/', label: 'Dashboard', icon: IconDashboard },
     { to: '/pdv', label: 'PDV', icon: IconPDV },
     { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico },
+    { to: '/condicionais', label: 'Condicionais (Mala)', icon: IconCondicionais },
     { to: '/compras', label: 'Compras & Reposição', icon: IconCompras },
     { to: '/produtos', label: 'Produtos', icon: IconProdutos },
     { to: '/clientes', label: 'Clientes', icon: IconClientes },
@@ -159,6 +167,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/pdv" element={<Vendas />} />
             <Route path="/vendas" element={<HistoricoVendas />} />
+            <Route path="/condicionais" element={<Condicionais />} />
             <Route path="/compras" element={<Compras />} />
             <Route path="/produtos" element={<Produtos />} />
             <Route path="/clientes" element={<Clientes />} />
