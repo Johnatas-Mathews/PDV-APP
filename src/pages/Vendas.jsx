@@ -62,11 +62,11 @@ export default function Vendas() {
   const [clienteSelecionado, setClienteSelecionado] = useState('')
   const [quantidade, setQuantidade] = useState('1')
   const [itensVenda, setItensVenda] = useState([])
-  const [formaPagamento, setFormaPagamento] = useState('dinheiro') // 'dinheiro', 'pix', 'debito', 'credito', 'crediario', 'misto'
+  const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [valorEntrada, setValorEntrada] = useState('')
   
   // Pagamento Misto
-  const [linhasMisto, setLinhasMisto] = useState([]) // [ { id, tipo: 'pix', valor: 50.00 } ]
+  const [linhasMisto, setLinhasMisto] = useState([])
   const [tipoMistoAdd, setTipoMistoAdd] = useState('pix')
   const [valorMistoAdd, setValorMistoAdd] = useState('')
 
@@ -911,7 +911,7 @@ export default function Vendas() {
       {modalEscolhaVarAberto && prodParaEscolherVar && (
         <div className="modal-overlay" onClick={() => setModalEscolhaVarAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justify-content: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
               <div>
                 <h3 style={{ fontSize: '1.15rem', color: '#0f172a' }}>Escolha o Tamanho / Cor</h3>
                 <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{prodParaEscolherVar.nome}</span>
