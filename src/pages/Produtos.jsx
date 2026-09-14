@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
-// Ícones SVG minimalistas nativos
+// Ícones SVG minimalistas
 const IconPlus = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12h14" /><path d="M12 5v14" />
@@ -35,9 +35,7 @@ const IconBarcode = () => (
 
 const IconLayers = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 2 7 12 12 22 7 12 2" />
-    <polyline points="2 17 12 22 22 17" />
-    <polyline points="2 12 12 17 22 12" />
+    <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
   </svg>
 )
 
@@ -47,7 +45,6 @@ const IconZap = () => (
   </svg>
 )
 
-// Gerador matemático de código EAN-13 oficial válido para uso interno
 const gerarCodigoEAN13 = () => {
   const prefixo = '20'
   const randomParte = String(Date.now()).slice(-8) + String(Math.floor(Math.random() * 90 + 10))
@@ -80,7 +77,7 @@ export default function Produtos() {
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
   const [busca, setBusca] = useState('')
 
-  // Formulário Produto Base
+  // Formulário Produto
   const [idEditando, setIdEditando] = useState(null)
   const [nome, setNome] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
@@ -90,12 +87,12 @@ export default function Produtos() {
   const [estoque, setEstoque] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // Modal de Grade
+  // Modal Grade
   const [modalGradeAberto, setModalGradeAberto] = useState(false)
   const [produtoGradeSel, setProdutoGradeSel] = useState(null)
   const [variacoesDoProd, setVariacoesDoProd] = useState([])
 
-  // Gerador de Matriz
+  // Matriz
   const [tamanhosSelecionados, setTamanhosSelecionados] = useState([])
   const [coresSelecionadas, setCoresSelecionadas] = useState([])
   const [customTamInput, setCustomTamInput] = useState('')
@@ -179,7 +176,6 @@ export default function Produtos() {
     else carregarDados()
   }
 
-  // ABRIR GRADE DO PRODUTO
   const abrirGrade = (prod) => {
     setProdutoGradeSel(prod)
     const vars = variacoes.filter(v => v.produto_id === prod.id)
@@ -335,20 +331,76 @@ export default function Produtos() {
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
         
-        .card-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
+        /* CARD BRANCO COM BORDA SEGURA */
+        .card-box {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 1.5rem;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          margin-bottom: 1.5rem;
+          width: 100%;
+          box-sizing: border-box;
+          overflow: hidden; /* Garante que nada vaze */
+        }
         .card-box h2 { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1.25rem; }
-        .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
-        .form-group { display: flex; flex-direction: column; flex: 1; }
-        .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
+
+        /* GRID FLUIDO DO FORMULÁRIO (Substitui o flex que quebrava) */
+        .form-grid-top {
+          display: grid;
+          grid-template-columns: 2fr 1.3fr 1.3fr;
+          gap: 1rem;
+          margin-bottom: 1rem;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .form-grid-bottom {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 1rem;
+          margin-bottom: 1rem;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          box-sizing: border-box;
+          min-width: 0; /* Previne transbordo no grid */
+        }
+        .form-group label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #64748b;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .form-group input, .form-group select {
+          height: 42px;
+          padding: 0 0.85rem;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #ffffff;
+          color: #0f172a;
+          font-size: 0.95rem;
+          width: 100%;
+          box-sizing: border-box;
+        }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
         
-        .input-with-action { display: flex; gap: 6px; }
-        .input-with-action input { flex: 1; }
+        .input-with-action { display: flex; gap: 6px; width: 100%; box-sizing: border-box; }
+        .input-with-action input { flex: 1; min-width: 0; }
         .btn-gerar-code { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.78rem; font-weight: 700; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; transition: all 0.15s; }
         .btn-gerar-code:hover { background: #e2e8f0; color: #0f172a; border-color: #94a3b8; }
 
-        .chips-container { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+        .chips-container { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; max-width: 100%; }
         .chip-cat { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; }
         .chip-cat.selected { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; font-weight: 600; }
 
@@ -368,7 +420,6 @@ export default function Produtos() {
         .pill { padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .pill.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
-        /* Container de Tabela com Scroll Responsivo */
         .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
         table { width: 100%; border-collapse: collapse; text-align: left; min-width: 680px; }
         th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
@@ -398,14 +449,20 @@ export default function Produtos() {
         .chip-selectable { padding: 6px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 0.85rem; font-weight: 600; color: #334155; cursor: pointer; transition: all 0.1s; }
         .chip-selectable.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
-        /* Media Queries para Telas Pequenas e Celular */
-        @media (max-width: 768px) {
-          .card-box { padding: 1rem; }
-          .form-row { flex-direction: column; gap: 0.75rem; }
+        /* RESPONSIVIDADE REAL (TELAS MENORES E CELULARES) */
+        @media (max-width: 900px) {
+          .form-grid-top { grid-template-columns: 1fr 1fr; }
+          .form-grid-bottom { grid-template-columns: 1fr 1fr; }
+        }
+
+        @media (max-width: 640px) {
+          .card-box { padding: 1.1rem; }
+          .form-grid-top { grid-template-columns: 1fr; gap: 0.75rem; }
+          .form-grid-bottom { grid-template-columns: 1fr; gap: 0.75rem; }
           .search-input { width: 100%; }
           .filter-section { flex-direction: column; align-items: stretch; }
           .modal-card { padding: 1rem; }
-          .col-acoes { min-width: 140px; }
+          .col-acoes { min-width: 130px; }
           .acoes-group { flex-direction: column; width: 100%; gap: 4px; }
           .acoes-group button { width: 100%; justify-content: center; }
         }
@@ -419,8 +476,10 @@ export default function Produtos() {
       <div className="card-box">
         <h2>{idEditando ? 'Editar Produto' : 'Novo Produto (Modelo Base)'}</h2>
         <form onSubmit={salvarProduto}>
-          <div className="form-row">
-            <div className="form-group" style={{ flex: 2 }}>
+          
+          {/* LINHA SUPERIOR DO FORMULÁRIO (GRID RESPONSIVO) */}
+          <div className="form-grid-top">
+            <div className="form-group">
               <label>Nome do Produto / Modelo</label>
               <input 
                 type="text" 
@@ -431,8 +490,8 @@ export default function Produtos() {
               />
             </div>
 
-            <div className="form-group" style={{ flex: 1.4 }}>
-              <label>Código de Barras (EAN-13 / Etiqueta)</label>
+            <div className="form-group">
+              <label>Código de Barras (EAN-13)</label>
               <div className="input-with-action">
                 <input 
                   type="text" 
@@ -444,14 +503,14 @@ export default function Produtos() {
                   type="button" 
                   className="btn-gerar-code"
                   onClick={() => setCodigoBarras(gerarCodigoEAN13())}
-                  title="Gerar código de barras EAN-13 válido automaticamente"
+                  title="Gerar código de barras EAN-13 válido"
                 >
                   <IconZap /> Gerar
                 </button>
               </div>
             </div>
 
-            <div className="form-group" style={{ flex: 1.4 }}>
+            <div className="form-group">
               <label>Categoria</label>
               <input 
                 type="text" 
@@ -483,7 +542,8 @@ export default function Produtos() {
             </div>
           </div>
 
-          <div className="form-row">
+          {/* LINHA INFERIOR DO FORMULÁRIO (GRID RESPONSIVO) */}
+          <div className="form-grid-bottom">
             <div className="form-group">
               <label>Preço de Venda (R$)</label>
               <input 
@@ -652,7 +712,7 @@ export default function Produtos() {
         )}
       </div>
 
-      {/* MODAL CONSTRUTOR DE MATRIZ DE GRADE RESPONSIVO */}
+      {/* MODAL CONSTRUTOR DE MATRIZ DE GRADE */}
       {modalGradeAberto && produtoGradeSel && (
         <div className="modal-overlay" onClick={() => setModalGradeAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -664,7 +724,6 @@ export default function Produtos() {
               <button onClick={() => setModalGradeAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '20px', color: '#64748b', padding: '4px' }}>✕</button>
             </div>
 
-            {/* Gerador de Matriz Inteligente */}
             <div className="matriz-box">
               <div className="matriz-section-title">
                 <span>1. Escolha os Tamanhos</span>
@@ -684,7 +743,6 @@ export default function Produtos() {
                 </div>
               </div>
 
-              {/* Chips de Tamanhos Selecionáveis */}
               <div className="chips-grid">
                 {['PP', 'P', 'M', 'G', 'GG', 'XGG', '34', '36', '38', '40', '42', '44', '50ml', '100ml'].map(tam => (
                   <button 
@@ -698,7 +756,6 @@ export default function Produtos() {
                 ))}
               </div>
 
-              {/* Input para Tamanho Customizado */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
@@ -719,7 +776,6 @@ export default function Produtos() {
                 </button>
               </div>
 
-              {/* Chips de Cores Selecionáveis */}
               <div className="chips-grid">
                 {CORES_COMUNS.map(cor => (
                   <button 
@@ -733,7 +789,6 @@ export default function Produtos() {
                 ))}
               </div>
 
-              {/* Input para Cor Customizada */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
@@ -747,7 +802,6 @@ export default function Produtos() {
                 </button>
               </div>
 
-              {/* Rodapé do Construtor */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '10px', flexWrap: 'wrap', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Estoque Padrão:</label>
@@ -780,7 +834,6 @@ export default function Produtos() {
               </div>
             </div>
 
-            {/* Tabela de Variações Existentes */}
             <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
               Variações Ativas no Estoque ({variacoesDoProd.length})
             </span>
