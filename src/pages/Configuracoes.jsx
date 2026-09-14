@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { useAuth } from '../context/AuthContext'
 
 const IconPlus = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -8,15 +7,7 @@ const IconPlus = () => (
   </svg>
 )
 
-const IconTrash = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-  </svg>
-)
-
 export default function Configuracoes() {
-  const { carregarUsuarios } = useAuth()
-
   // Configurações Gerais
   const [empresaNome, setEmpresaNome] = useState('')
   const [empresaDocumento, setEmpresaDocumento] = useState('')
@@ -31,6 +22,7 @@ export default function Configuracoes() {
   // Gerenciamento de Operadores
   const [usuarios, setUsuarios] = useState([])
   const [novoNome, setNovoNome] = useState('')
+  const [novoLogin, setNovoLogin] = useState('')
   const [novoPin, setNovoPin] = useState('')
   const [novoPerfil, setNovoPerfil] = useState('vendedor')
   const [salvandoUsuario, setSalvandoUsuario] = useState(false)
@@ -89,12 +81,15 @@ export default function Configuracoes() {
 
   const cadastrarOperador = async (e) => {
     e.preventDefault()
-    if (!novoNome.trim() || !novoPin.trim()) return alert('Informe Nome e PIN.')
+    if (!novoNome.trim() || !novoLogin.trim() || !novoPin.trim()) {
+      return alert('Preencha Nome, Usuário de Login e Senha.')
+    }
 
     setSalvandoUsuario(true)
     try {
       const { error } = await supabase.from('usuarios_loja').insert([{
         nome: novoNome.trim(),
+        login: novoLogin.trim().toLowerCase(),
         pin: novoPin.trim(),
         perfil: novoPerfil,
         ativo: true
@@ -103,10 +98,10 @@ export default function Configuracoes() {
       if (error) throw error
       alert(`Operador "${novoNome}" cadastrado com sucesso!`)
       setNovoNome('')
+      setNovoLogin('')
       setNovoPin('')
       setNovoPerfil('vendedor')
       await carregarDados()
-      await carregarUsuarios()
     } catch (err) {
       alert('Erro ao cadastrar operador: ' + err.message)
     }
@@ -117,7 +112,6 @@ export default function Configuracoes() {
     try {
       await supabase.from('usuarios_loja').update({ ativo: !statusAtual }).eq('id', id)
       await carregarDados()
-      await carregarUsuarios()
     } catch (err) {
       alert('Erro ao alterar status: ' + err.message)
     }
@@ -135,6 +129,8 @@ export default function Configuracoes() {
         .card-box h2 { font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 1.25rem; }
         
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+        .grid-4 { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.2fr; gap: 1rem; margin-bottom: 1rem; }
+        
         .form-group { display: flex; flex-direction: column; width: 100%; }
         .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; width: 100%; box-sizing: border-box; }
@@ -152,7 +148,7 @@ export default function Configuracoes() {
         .badge-vendedor { background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
 
         @media (max-width: 768px) {
-          .grid-2 { grid-template-columns: 1fr; }
+          .grid-2, .grid-4 { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -161,33 +157,36 @@ export default function Configuracoes() {
         <p className="page-subtitle">Dados oficiais dos comprovantes, cashback e operadores do caixa</p>
       </div>
 
-      {/* GESTÃO DE OPERADORES & ACESSOS */}
+      {/* GESTÃO DE OPERADORES */}
       <div className="card-box">
         <h2>👥 Equipe & Operadores de Caixa</h2>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-          Cadastre seus vendedores para liberar o caixa com PIN numérico. Vendedores não têm acesso aos relatórios de custos, DRE ou configurações da empresa.
+          Cadastre seus vendedores com login e senha próprios. Vendedores só acessam o PDV e as Condicionais.
         </p>
 
         <form onSubmit={cadastrarOperador} style={{ background: '#f8fafc', padding: '1.1rem', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-          <div className="grid-2">
+          <div className="grid-4">
             <div className="form-group">
               <label>Nome do Funcionário</label>
               <input type="text" placeholder="Ex: Mariana Silva" value={novoNome} onChange={e => setNovoNome(e.target.value)} required />
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label>PIN (Senha 4 dígitos)</label>
-                <input type="text" maxLength={6} placeholder="Ex: 5544" value={novoPin} onChange={e => setNovoPin(e.target.value)} required />
-              </div>
+            <div className="form-group">
+              <label>Usuário de Login</label>
+              <input type="text" placeholder="Ex: mariana" value={novoLogin} onChange={e => setNovoLogin(e.target.value)} required />
+            </div>
 
-              <div className="form-group" style={{ flex: 1.3 }}>
-                <label>Nível de Acesso</label>
-                <select value={novoPerfil} onChange={e => setNovoPerfil(e.target.value)}>
-                  <option value="vendedor">Vendedor (Só Caixa/PDV)</option>
-                  <option value="admin">Administrador (Total)</option>
-                </select>
-              </div>
+            <div className="form-group">
+              <label>Senha</label>
+              <input type="password" placeholder="••••" value={novoPin} onChange={e => setNovoPin(e.target.value)} required />
+            </div>
+
+            <div className="form-group">
+              <label>Nível de Acesso</label>
+              <select value={novoPerfil} onChange={e => setNovoPerfil(e.target.value)}>
+                <option value="vendedor">Vendedor (Só Caixa/PDV)</option>
+                <option value="admin">Administrador (Total)</option>
+              </select>
             </div>
           </div>
 
@@ -200,9 +199,9 @@ export default function Configuracoes() {
           <table>
             <thead>
               <tr>
-                <th>Operador</th>
-                <th>Perfil</th>
-                <th>PIN Cadastrado</th>
+                <th>Nome</th>
+                <th>Usuário</th>
+                <th>Nível</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'center' }}>Ação</th>
               </tr>
@@ -211,12 +210,12 @@ export default function Configuracoes() {
               {usuarios.map(u => (
                 <tr key={u.id}>
                   <td><strong>{u.nome}</strong></td>
+                  <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{u.login || 'admin'}</td>
                   <td>
                     <span className={u.perfil === 'admin' ? 'badge-admin' : 'badge-vendedor'}>
                       {u.perfil === 'admin' ? '👑 Administrador' : '🛍️ Vendedor'}
                     </span>
                   </td>
-                  <td style={{ fontFamily: 'monospace' }}>•••• ({u.pin})</td>
                   <td>
                     <span style={{ color: u.ativo ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
                       {u.ativo ? '● Ativo' : '○ Inativo'}
