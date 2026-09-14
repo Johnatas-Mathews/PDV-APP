@@ -83,14 +83,14 @@ const IconConfig = () => (
   </svg>
 )
 
-const IconMenuToggle = () => (
+const IconMenuHamburger = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
   </svg>
 )
 
 const IconClose = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 )
@@ -118,10 +118,6 @@ export default function App() {
     { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig },
   ]
 
-  const toggleSidebar = () => {
-    setSidebarAberta(prev => !prev)
-  }
-
   return (
     <BrowserRouter>
       <style>{`
@@ -130,8 +126,8 @@ export default function App() {
         
         .app-layout { display: flex; min-height: 100vh; background-color: #f8fafc; position: relative; }
         
-        /* Botão Flutuante Superior para Mostrar / Ocultar Menu */
-        .topbar-toggle {
+        /* Botão Hambúrguer: SÓ APARECE QUANDO A SIDEBAR ESTIVER FECHADA */
+        .btn-reabrir-sidebar {
           position: fixed;
           top: 14px;
           left: 14px;
@@ -146,10 +142,10 @@ export default function App() {
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.18);
           transition: all 0.2s ease;
         }
-        .topbar-toggle:hover { background: #1e293b; color: #2563eb; }
+        .btn-reabrir-sidebar:hover { background: #1e293b; color: #2563eb; }
 
         /* Sidebar com Animação Fluida */
         .app-sidebar {
@@ -175,20 +171,22 @@ export default function App() {
 
         .sidebar-brand { display: flex; align-items: center; justify-content: space-between; padding: 0 0.5rem 1.25rem 0.5rem; border-bottom: 1px solid #1e293b; margin-bottom: 1.25rem; }
         .brand-content { display: flex; align-items: center; gap: 10px; }
-        .brand-badge { width: 34px; height: 34px; background: #2563eb; color: #ffffff; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .brand-badge { width: 36px; height: 36px; background: #2563eb; color: #ffffff; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
         .brand-name { display: block; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.05em; color: #ffffff; }
         .brand-sub { display: block; font-size: 0.65rem; color: #64748b; font-weight: 600; }
         
+        /* Botão X exclusivo da direita dentro da sidebar */
         .btn-fechar-sidebar {
           background: transparent;
           border: none;
           color: #94a3b8;
           cursor: pointer;
-          padding: 4px;
-          border-radius: 6px;
+          padding: 6px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
+          transition: all 0.15s;
         }
         .btn-fechar-sidebar:hover { color: #ffffff; background: #1e293b; }
 
@@ -200,10 +198,15 @@ export default function App() {
         /* Área Principal */
         .app-main-content {
           flex: 1;
-          padding: 2rem 2rem 2rem 4rem; /* espaço reservado para o botão */
+          padding: 2rem;
           overflow-y: auto;
           min-width: 0;
           transition: all 0.25s ease;
+        }
+
+        /* Se a sidebar estiver fechada no Desktop, deixa margem para o botão de abrir */
+        .app-main-content.sidebar-fechada {
+          padding-left: 4.5rem;
         }
 
         /* Overlay Escuro para Celular */
@@ -235,20 +238,25 @@ export default function App() {
           .app-main-content {
             padding: 4.5rem 1rem 1.5rem 1rem;
           }
+          .app-main-content.sidebar-fechada {
+            padding-left: 1rem;
+          }
         }
       `}</style>
 
       <div className="app-layout">
-        {/* Botão de Toggle Superior */}
-        <button 
-          className="topbar-toggle" 
-          onClick={toggleSidebar} 
-          title={sidebarAberta ? "Recolher menu lateral" : "Expandir menu lateral"}
-        >
-          {sidebarAberta ? <IconClose /> : <IconMenuToggle />}
-        </button>
+        {/* Botão Hambúrguer: SÓ APARECE QUANDO A SIDEBAR ESTIVER FECHADA */}
+        {!sidebarAberta && (
+          <button 
+            className="btn-reabrir-sidebar" 
+            onClick={() => setSidebarAberta(true)} 
+            title="Abrir menu lateral"
+          >
+            <IconMenuHamburger />
+          </button>
+        )}
 
-        {/* Fundo escurecido ao abrir o menu no celular */}
+        {/* Backdrop no mobile */}
         <div 
           className={`sidebar-backdrop ${sidebarAberta ? 'visivel' : ''}`} 
           onClick={() => setSidebarAberta(false)}
@@ -267,7 +275,12 @@ export default function App() {
               </div>
             </div>
 
-            <button className="btn-fechar-sidebar" onClick={() => setSidebarAberta(false)} title="Recolher menu">
+            {/* Único botão de fechar (X) da barra */}
+            <button 
+              className="btn-fechar-sidebar" 
+              onClick={() => setSidebarAberta(false)} 
+              title="Ocultar menu lateral"
+            >
               <IconClose />
             </button>
           </div>
@@ -293,8 +306,8 @@ export default function App() {
           </nav>
         </aside>
 
-        {/* Conteúdo Principal */}
-        <main className="app-main-content">
+        {/* Conteúdo da Página */}
+        <main className={`app-main-content ${sidebarAberta ? '' : 'sidebar-fechada'}`}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/pdv" element={<Vendas />} />
