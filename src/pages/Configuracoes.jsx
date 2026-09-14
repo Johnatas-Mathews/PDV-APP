@@ -1,229 +1,296 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { DADOS_EMPRESA_PADRAO } from '../utils/pdfGenerator'
+import { useAuth } from '../context/AuthContext'
 
-// Ícones SVG minimalistas
-const IconStore = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
+const IconPlus = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14" /><path d="M12 5v14" />
   </svg>
 )
 
-const IconCheck = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
+const IconTrash = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
   </svg>
 )
 
 export default function Configuracoes() {
-  const [loading, setLoading] = useState(true)
-  const [salvando, setSalvando] = useState(false)
+  const { carregarUsuarios } = useAuth()
 
-  // Estados dos dados da empresa
-  const [nome, setNome] = useState('')
-  const [documento, setDocumento] = useState('')
-  const [telefone, setTelefone] = useState('')
-  const [endereco, setEndereco] = useState('')
-  const [cidadeUf, setCidadeUf] = useState('')
-  const [instagram, setInstagram] = useState('')
-  const [mensagemCupom, setMensagemCupom] = useState('')
+  // Configurações Gerais
+  const [empresaNome, setEmpresaNome] = useState('')
+  const [empresaDocumento, setEmpresaDocumento] = useState('')
+  const [empresaTelefone, setEmpresaTelefone] = useState('')
+  const [empresaEndereco, setEmpresaEndereco] = useState('')
+  const [empresaCidadeUf, setEmpresaCidadeUf] = useState('')
+  const [empresaInstagram, setEmpresaInstagram] = useState('')
+  const [empresaMensagemCupom, setEmpresaMensagemCupom] = useState('')
+  const [cashbackPercentual, setCashbackPercentual] = useState('5')
+  const [salvandoConfig, setSalvandoConfig] = useState(false)
 
-  const carregarConfiguracoes = async () => {
-    setLoading(true)
-    try {
-      const { data, error } = await supabase.from('configuracoes').select('*')
-      if (error) throw error
+  // Gerenciamento de Operadores
+  const [usuarios, setUsuarios] = useState([])
+  const [novoNome, setNovoNome] = useState('')
+  const [novoPin, setNovoPin] = useState('')
+  const [novoPerfil, setNovoPerfil] = useState('vendedor')
+  const [salvandoUsuario, setSalvandoUsuario] = useState(false)
 
-      if (data) {
-        const mapa = {}
-        data.forEach(item => { mapa[item.chave] = item.valor })
-
-        setNome(mapa['empresa_nome'] || DADOS_EMPRESA_PADRAO.nome)
-        setDocumento(mapa['empresa_documento'] || DADOS_EMPRESA_PADRAO.documento)
-        setTelefone(mapa['empresa_telefone'] || DADOS_EMPRESA_PADRAO.telefone)
-        setEndereco(mapa['empresa_endereco'] || DADOS_EMPRESA_PADRAO.endereco)
-        setCidadeUf(mapa['empresa_cidade_uf'] || DADOS_EMPRESA_PADRAO.cidadeUf)
-        setInstagram(mapa['empresa_instagram'] || DADOS_EMPRESA_PADRAO.instagram)
-        setMensagemCupom(mapa['empresa_mensagem_cupom'] || DADOS_EMPRESA_PADRAO.mensagemCupom)
-      }
-    } catch (err) {
-      alert('Erro ao carregar configurações: ' + err.message)
+  const carregarDados = async () => {
+    // 1. Configurações
+    const { data: cfgData } = await supabase.from('configuracoes').select('*')
+    if (cfgData) {
+      const mapa = {}
+      cfgData.forEach(c => { mapa[c.chave] = c.valor })
+      setEmpresaNome(mapa['empresa_nome'] || '')
+      setEmpresaDocumento(mapa['empresa_documento'] || '')
+      setEmpresaTelefone(mapa['empresa_telefone'] || '')
+      setEmpresaEndereco(mapa['empresa_endereco'] || '')
+      setEmpresaCidadeUf(mapa['empresa_cidade_uf'] || '')
+      setEmpresaInstagram(mapa['empresa_instagram'] || '')
+      setEmpresaMensagemCupom(mapa['empresa_mensagem_cupom'] || 'Obrigado pela preferência! Volte sempre.')
+      setCashbackPercentual(mapa['cashback_percentual'] || '5')
     }
-    setLoading(false)
+
+    // 2. Operadores
+    const { data: uData } = await supabase.from('usuarios_loja').select('*').order('id')
+    if (uData) setUsuarios(uData)
   }
 
   useEffect(() => {
-    carregarConfiguracoes()
+    carregarDados()
   }, [])
 
   const salvarConfiguracoes = async (e) => {
     e.preventDefault()
-    setSalvando(true)
+    setSalvandoConfig(true)
 
-    const itensParaSalvar = [
-      { chave: 'empresa_nome', valor: nome.trim() },
-      { chave: 'empresa_documento', valor: documento.trim() },
-      { chave: 'empresa_telefone', valor: telefone.trim() },
-      { chave: 'empresa_endereco', valor: endereco.trim() },
-      { chave: 'empresa_cidade_uf', valor: cidadeUf.trim() },
-      { chave: 'empresa_instagram', valor: instagram.trim() },
-      { chave: 'empresa_mensagem_cupom', valor: mensagemCupom.trim() }
+    const configs = [
+      { chave: 'empresa_nome', valor: empresaNome.trim() },
+      { chave: 'empresa_documento', valor: empresaDocumento.trim() },
+      { chave: 'empresa_telefone', valor: empresaTelefone.trim() },
+      { chave: 'empresa_endereco', valor: empresaEndereco.trim() },
+      { chave: 'empresa_cidade_uf', valor: empresaCidadeUf.trim() },
+      { chave: 'empresa_instagram', valor: empresaInstagram.trim() },
+      { chave: 'empresa_mensagem_cupom', valor: empresaMensagemCupom.trim() },
+      { chave: 'cashback_percentual', valor: cashbackPercentual }
     ]
 
     try {
-      for (const item of itensParaSalvar) {
-        const { error } = await supabase
-          .from('configuracoes')
-          .upsert(item, { onConflict: 'chave' })
-        if (error) throw error
+      for (const item of configs) {
+        await supabase.from('configuracoes').upsert({ chave: item.chave, valor: item.valor }, { onConflict: 'chave' })
       }
-
-      alert('Dados da empresa atualizados com sucesso!\nOs novos comprovantes já usarão essas informações.')
+      alert('Configurações salvas com sucesso!')
     } catch (err) {
-      alert('Erro ao salvar configurações: ' + err.message)
+      alert('Erro ao salvar: ' + err.message)
     }
 
-    setSalvando(false)
+    setSalvandoConfig(false)
+  }
+
+  const cadastrarOperador = async (e) => {
+    e.preventDefault()
+    if (!novoNome.trim() || !novoPin.trim()) return alert('Informe Nome e PIN.')
+
+    setSalvandoUsuario(true)
+    try {
+      const { error } = await supabase.from('usuarios_loja').insert([{
+        nome: novoNome.trim(),
+        pin: novoPin.trim(),
+        perfil: novoPerfil,
+        ativo: true
+      }])
+
+      if (error) throw error
+      alert(`Operador "${novoNome}" cadastrado com sucesso!`)
+      setNovoNome('')
+      setNovoPin('')
+      setNovoPerfil('vendedor')
+      await carregarDados()
+      await carregarUsuarios()
+    } catch (err) {
+      alert('Erro ao cadastrar operador: ' + err.message)
+    }
+    setSalvandoUsuario(false)
+  }
+
+  const alternarStatusOperador = async (id, statusAtual) => {
+    try {
+      await supabase.from('usuarios_loja').update({ ativo: !statusAtual }).eq('id', id)
+      await carregarDados()
+      await carregarUsuarios()
+    } catch (err) {
+      alert('Erro ao alterar status: ' + err.message)
+    }
   }
 
   return (
     <div className="cfg-wrapper">
       <style>{`
-        .cfg-wrapper { max-width: 860px; margin: 0 auto; }
+        .cfg-wrapper { width: 100%; max-width: 1100px; margin: 0 auto; }
         .page-header { margin-bottom: 1.5rem; }
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
+
+        .card-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
+        .card-box h2 { font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 1.25rem; }
         
-        .card-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
-        .card-box h2 { font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 8px; }
-        .form-row { display: flex; gap: 1rem; margin-bottom: 1.1rem; }
-        .form-group { display: flex; flex-direction: column; flex: 1; }
-        .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .form-group input, .form-group textarea { padding: 0.65rem 0.85rem; border: 1px solid #cbd5e1; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
-        .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #2563eb; }
-        
-        .preview-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 1.25rem; margin-top: 1rem; text-align: center; }
-        .preview-title { font-weight: 800; font-size: 1rem; color: #0f172a; text-transform: uppercase; }
-        .preview-sub { font-size: 0.8rem; color: #64748b; margin-top: 3px; }
-        
-        .btn-salvar { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; border-radius: 10px; border: none; cursor: pointer; padding: 0.8rem 2rem; font-size: 0.95rem; background: #2563eb; color: #ffffff; transition: all 0.15s ease; }
-        .btn-salvar:hover { background: #1d4ed8; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+        .form-group { display: flex; flex-direction: column; width: 100%; }
+        .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
+        .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; width: 100%; box-sizing: border-box; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
+
+        .btn-primary { background: #2563eb; color: #ffffff; padding: 0.65rem 1.25rem; border-radius: 10px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary:hover { background: #1d4ed8; }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 0.75rem 1rem; border-bottom: 1px solid #e2e8f0; }
+        td { padding: 0.85rem 1rem; font-size: 0.88rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        tbody tr:hover { background: #f8fafc; }
+
+        .badge-admin { background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+        .badge-vendedor { background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+
         @media (max-width: 768px) {
-          .form-row { flex-direction: column; gap: 0.85rem; }
+          .grid-2 { grid-template-columns: 1fr; }
         }
       `}</style>
 
       <div className="page-header">
-        <h1 className="page-title">Configurações da Empresa</h1>
-        <p className="page-subtitle">Personalize a identidade da sua loja para cupons, comprovantes e mensagens</p>
+        <h1 className="page-title">Configurações da Loja</h1>
+        <p className="page-subtitle">Dados oficiais dos comprovantes, cashback e operadores do caixa</p>
       </div>
 
-      {loading ? (
-        <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>Carregando dados da loja...</p>
-      ) : (
-        <form onSubmit={salvarConfiguracoes}>
-          <div className="card-box">
-            <h2><IconStore /> Identificação & Contato</h2>
+      {/* GESTÃO DE OPERADORES & ACESSOS */}
+      <div className="card-box">
+        <h2>👥 Equipe & Operadores de Caixa</h2>
+        <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
+          Cadastre seus vendedores para liberar o caixa com PIN numérico. Vendedores não têm acesso aos relatórios de custos, DRE ou configurações da empresa.
+        </p>
 
-            <div className="form-row">
-              <div className="form-group" style={{ flex: 2 }}>
-                <label>Nome Fantasia / Razão Social</label>
-                <input 
-                  type="text" 
-                  placeholder="Ex: TECCO MODA & PERFUMARIA"
-                  value={nome}
-                  onChange={e => setNome(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>CNPJ ou CPF do Emissor</label>
-                <input 
-                  type="text" 
-                  placeholder="00.000.000/0001-00"
-                  value={documento}
-                  onChange={e => setDocumento(e.target.value)}
-                />
-              </div>
+        <form onSubmit={cadastrarOperador} style={{ background: '#f8fafc', padding: '1.1rem', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Nome do Funcionário</label>
+              <input type="text" placeholder="Ex: Mariana Silva" value={novoNome} onChange={e => setNovoNome(e.target.value)} required />
             </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label>WhatsApp / Telefone de Contato</label>
-                <input 
-                  type="text" 
-                  placeholder="(11) 99999-9999"
-                  value={telefone}
-                  onChange={e => setTelefone(e.target.value)}
-                />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>PIN (Senha 4 dígitos)</label>
+                <input type="text" maxLength={6} placeholder="Ex: 5544" value={novoPin} onChange={e => setNovoPin(e.target.value)} required />
               </div>
 
-              <div className="form-group">
-                <label>Instagram da Loja</label>
-                <input 
-                  type="text" 
-                  placeholder="@sualoja"
-                  value={instagram}
-                  onChange={e => setInstagram(e.target.value)}
-                />
+              <div className="form-group" style={{ flex: 1.3 }}>
+                <label>Nível de Acesso</label>
+                <select value={novoPerfil} onChange={e => setNovoPerfil(e.target.value)}>
+                  <option value="vendedor">Vendedor (Só Caixa/PDV)</option>
+                  <option value="admin">Administrador (Total)</option>
+                </select>
               </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group" style={{ flex: 2 }}>
-                <label>Endereço Completo (Rua, Número, Bairro)</label>
-                <input 
-                  type="text" 
-                  placeholder="Ex: Rua das Flores, 120 - Centro"
-                  value={endereco}
-                  onChange={e => setEndereco(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Cidade / UF</label>
-                <input 
-                  type="text" 
-                  placeholder="Ex: São Paulo - SP"
-                  value={cidadeUf}
-                  onChange={e => setCidadeUf(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-group" style={{ marginTop: '0.5rem' }}>
-              <label>Mensagem de Rodapé no Cupom</label>
-              <input 
-                type="text" 
-                placeholder="Ex: Obrigado pela preferência! Trocas em até 15 dias com este cupom."
-                value={mensagemCupom}
-                onChange={e => setMensagemCupom(e.target.value)}
-              />
-            </div>
-
-            {/* Pré-visualização do Cabeçalho do Cupom */}
-            <div style={{ marginTop: '1.5rem' }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Pré-visualização no Cabeçalho do Comprovante:
-              </span>
-              <div className="preview-box">
-                <div className="preview-title">{nome || 'NOME DA SUA LOJA'}</div>
-                {documento && <div className="preview-sub">{documento}</div>}
-                {(endereco || cidadeUf) && <div className="preview-sub">{[endereco, cidadeUf].filter(Boolean).join(' - ')}</div>}
-                {telefone && <div className="preview-sub">Tel/WhatsApp: {telefone}</div>}
-                {instagram && <div className="preview-sub">Instagram: {instagram}</div>}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.75rem' }}>
-              <button type="submit" className="btn-salvar" disabled={salvando}>
-                <IconCheck /> {salvando ? 'Salvando...' : 'Salvar Informações'}
-              </button>
             </div>
           </div>
+
+          <button type="submit" className="btn-primary" disabled={salvandoUsuario}>
+            <IconPlus /> {salvandoUsuario ? 'Salvando...' : 'Adicionar Operador'}
+          </button>
         </form>
-      )}
+
+        <div style={{ overflowX: 'auto' }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Operador</th>
+                <th>Perfil</th>
+                <th>PIN Cadastrado</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'center' }}>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usuarios.map(u => (
+                <tr key={u.id}>
+                  <td><strong>{u.nome}</strong></td>
+                  <td>
+                    <span className={u.perfil === 'admin' ? 'badge-admin' : 'badge-vendedor'}>
+                      {u.perfil === 'admin' ? '👑 Administrador' : '🛍️ Vendedor'}
+                    </span>
+                  </td>
+                  <td style={{ fontFamily: 'monospace' }}>•••• ({u.pin})</td>
+                  <td>
+                    <span style={{ color: u.ativo ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
+                      {u.ativo ? '● Ativo' : '○ Inativo'}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => alternarStatusOperador(u.id, u.ativo)}
+                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >
+                      {u.ativo ? 'Desativar' : 'Ativar'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* DADOS DA EMPRESA */}
+      <div className="card-box">
+        <h2>🏷️ Dados da Empresa & Comprovantes</h2>
+        <form onSubmit={salvarConfiguracoes}>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Nome Fantasia da Loja</label>
+              <input type="text" value={empresaNome} onChange={e => setEmpresaNome(e.target.value)} required />
+            </div>
+
+            <div className="form-group">
+              <label>CNPJ / CPF</label>
+              <input type="text" value={empresaDocumento} onChange={e => setEmpresaDocumento(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>WhatsApp / Telefone da Loja</label>
+              <input type="text" value={empresaTelefone} onChange={e => setEmpresaTelefone(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Instagram (@sualoja)</label>
+              <input type="text" value={empresaInstagram} onChange={e => setEmpresaInstagram(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Endereço Completo</label>
+              <input type="text" value={empresaEndereco} onChange={e => setEmpresaEndereco(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Cidade / UF</label>
+              <input type="text" value={empresaCidadeUf} onChange={e => setEmpresaCidadeUf(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Percentual Padrão de Cashback (%)</label>
+              <input type="number" step="0.5" min="0" max="50" value={cashbackPercentual} onChange={e => setCashbackPercentual(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Mensagem de Rodapé dos Comprovantes</label>
+              <input type="text" value={empresaMensagemCupom} onChange={e => setEmpresaMensagemCupom(e.target.value)} />
+            </div>
+          </div>
+
+          <button type="submit" className="btn-primary" disabled={salvandoConfig} style={{ marginTop: '0.75rem' }}>
+            {salvandoConfig ? 'Salvando...' : 'Salvar Dados da Loja'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }
