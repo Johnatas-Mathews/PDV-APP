@@ -47,14 +47,12 @@ const IconZap = () => (
   </svg>
 )
 
-// Gerador de código EAN-13 válido (padrão 20... para uso interno de loja)
+// Gerador matemático de código EAN-13 oficial válido para uso interno
 const gerarCodigoEAN13 = () => {
-  // Prefixo '20' reservado internacionalmente para produtos internos da loja + 10 dígitos aleatórios baseados no tempo
   const prefixo = '20'
   const randomParte = String(Date.now()).slice(-8) + String(Math.floor(Math.random() * 90 + 10))
   const base12 = (prefixo + randomParte).slice(0, 12)
 
-  // Cálculo matemático oficial do dígito verificador do padrão EAN-13
   let soma = 0
   for (let i = 0; i < 12; i++) {
     const digito = parseInt(base12[i], 10)
@@ -65,6 +63,17 @@ const gerarCodigoEAN13 = () => {
   return base12 + digitoVerificador
 }
 
+// Conjuntos padrão de grade para moda e perfumaria
+const GRADES_PREDEFINIDAS = {
+  vestuario: ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
+  calcados: ['34', '35', '36', '37', '38', '39', '40', '41', '42', '44'],
+  perfumaria: ['30ml', '50ml', '100ml', '200ml']
+}
+
+const CORES_COMUNS = [
+  'Preto', 'Branco', 'Cinza', 'Azul Marinho', 'Nude', 'Off White', 'Vermelho', 'Verde Militar', 'Bege', 'Rosa'
+]
+
 export default function Produtos() {
   const [produtos, setProdutos] = useState([])
   const [variacoes, setVariacoes] = useState([])
@@ -72,7 +81,7 @@ export default function Produtos() {
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
   const [busca, setBusca] = useState('')
 
-  // Formulário Produto Pai
+  // Formulário Produto Base
   const [idEditando, setIdEditando] = useState(null)
   const [nome, setNome] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
@@ -86,11 +95,14 @@ export default function Produtos() {
   const [modalGradeAberto, setModalGradeAberto] = useState(false)
   const [produtoGradeSel, setProdutoGradeSel] = useState(null)
   const [variacoesDoProd, setVariacoesDoProd] = useState([])
-  const [novoTamanho, setNovoTamanho] = useState('')
-  const [novaCor, setNovaCor] = useState('')
-  const [novoEstoqueVar, setNovoEstoqueVar] = useState('1')
-  const [novoBarcodeVar, setNovoBarcodeVar] = useState('')
-  const [salvandoVar, setSalvandoVar] = useState(false)
+
+  // Gerador de Matriz
+  const [tamanhosSelecionados, setTamanhosSelecionados] = useState([])
+  const [coresSelecionadas, setCoresSelecionadas] = useState([])
+  const [customTamInput, setCustomTamInput] = useState('')
+  const [customCorInput, setCustomCorInput] = useState('')
+  const [estoquePadraoMatriz, setEstoquePadraoMatriz] = useState('1')
+  const [gerandoMatriz, setGerandoMatriz] = useState(false)
 
   const carregarDados = async () => {
     const { data: prodData } = await supabase.from('produtos').select('*').order('nome', { ascending: true })
@@ -168,56 +180,114 @@ export default function Produtos() {
     else carregarDados()
   }
 
-  // GERENCIAR GRADE
+  // ABRIR GRADE DO PRODUTO
   const abrirGrade = (prod) => {
     setProdutoGradeSel(prod)
     const vars = variacoes.filter(v => v.produto_id === prod.id)
     setVariacoesDoProd(vars)
-    setNovoTamanho('')
-    setNovaCor('')
-    setNovoEstoqueVar('1')
-    setNovoBarcodeVar('')
+    setTamanhosSelecionados([])
+    setCoresSelecionadas([])
+    setCustomTamInput('')
+    setCustomCorInput('')
+    setEstoquePadraoMatriz('1')
     setModalGradeAberto(true)
   }
 
-  const adicionarVariacao = async (e) => {
-    e.preventDefault()
-    if (!novoTamanho.trim() && !novaCor.trim()) {
-      return alert('Informe ao menos o Tamanho ou a Cor da variação.')
+  // Toggle de Tamanhos e Cores nos Chips
+  const toggleTamanho = (tam) => {
+    setTamanhosSelecionados(prev => 
+      prev.includes(tam) ? prev.filter(t => t !== tam) : [...prev, tam]
+    )
+  }
+
+  const toggleCor = (cor) => {
+    setCoresSelecionadas(prev => 
+      prev.includes(cor) ? prev.filter(c => c !== cor) : [...prev, cor]
+    )
+  }
+
+  const aplicarPredefinicaoTamanho = (tipo) => {
+    const lista = GRADES_PREDEFINIDAS[tipo] || []
+    setTamanhosSelecionados(lista)
+  }
+
+  const adicionarTamanhoCustom = () => {
+    if (!customTamInput.trim()) return
+    const tamUpper = customTamInput.trim().toUpperCase()
+    if (!tamanhosSelecionados.includes(tamUpper)) {
+      setTamanhosSelecionados([...tamanhosSelecionados, tamUpper])
+    }
+    setCustomTamInput('')
+  }
+
+  const adicionarCorCustom = () => {
+    if (!customCorInput.trim()) return
+    const corFormat = customCorInput.trim()
+    if (!coresSelecionadas.includes(corFormat)) {
+      setCoresSelecionadas([...coresSelecionadas, corFormat])
+    }
+    setCustomCorInput('')
+  }
+
+  // GERAR MATRIZ EM LOTE
+  const gerarMatrizCombinacoes = async () => {
+    if (tamanhosSelecionados.length === 0 && coresSelecionadas.length === 0) {
+      return alert('Selecione pelo menos um Tamanho ou uma Cor para gerar a grade.')
     }
 
-    setSalvandoVar(true)
-    const payload = {
-      produto_id: produtoGradeSel.id,
-      tamanho: novoTamanho.trim().toUpperCase() || null,
-      cor: novaCor.trim() || null,
-      estoque: parseInt(novoEstoqueVar) || 0,
-      codigo_barras: novoBarcodeVar.trim() || null
+    const tams = tamanhosSelecionados.length > 0 ? tamanhosSelecionados : [null]
+    const cors = coresSelecionadas.length > 0 ? coresSelecionadas : [null]
+    const qtdPadrao = parseInt(estoquePadraoMatriz) || 0
+
+    // Monta a combinação cartesiana
+    const novasLinhas = []
+    tams.forEach(tam => {
+      cors.forEach(cor => {
+        // Evita duplicatas com o que já existe
+        const jaExiste = variacoesDoProd.some(v => 
+          (v.tamanho || null) === (tam || null) && (v.cor || null) === (cor || null)
+        )
+
+        if (!jaExiste) {
+          novasLinhas.push({
+            produto_id: produtoGradeSel.id,
+            tamanho: tam,
+            cor: cor,
+            estoque: qtdPadrao,
+            codigo_barras: gerarCodigoEAN13()
+          })
+        }
+      })
+    })
+
+    if (novasLinhas.length === 0) {
+      return alert('Todas as combinações selecionadas já existem cadastradas para este produto!')
     }
 
+    setGerandoMatriz(true)
     try {
-      const { data, error } = await supabase.from('variacoes_grade').insert([payload]).select().single()
+      const { data, error } = await supabase.from('variacoes_grade').insert(novasLinhas).select()
       if (error) throw error
 
-      const listaAtualizada = [...variacoesDoProd, data]
+      const listaAtualizada = [...variacoesDoProd, ...data]
       setVariacoesDoProd(listaAtualizada)
 
+      // Atualiza o estoque total somado do produto pai
       const somaEstoqueGrade = listaAtualizada.reduce((s, v) => s + (v.estoque || 0), 0)
       await supabase.from('produtos').update({ estoque: somaEstoqueGrade }).eq('id', produtoGradeSel.id)
 
-      setNovoTamanho('')
-      setNovaCor('')
-      setNovoEstoqueVar('1')
-      setNovoBarcodeVar('')
+      alert(`✅ ${novasLinhas.length} variações geradas com sucesso com códigos EAN-13 exclusivos!`)
+      setTamanhosSelecionados([])
+      setCoresSelecionadas([])
       await carregarDados()
     } catch (err) {
-      alert('Erro ao adicionar variação: ' + err.message)
+      alert('Erro ao gerar variações: ' + err.message)
     }
-    setSalvandoVar(false)
+    setGerandoMatriz(false)
   }
 
   const excluirVariacao = async (idVar) => {
-    if (!confirm('Deseja remover esta variação da grade?')) return
+    if (!confirm('Deseja remover esta variação?')) return
     try {
       const { error } = await supabase.from('variacoes_grade').delete().eq('id', idVar)
       if (error) throw error
@@ -242,6 +312,15 @@ export default function Produtos() {
       setVariacoesDoProd(lista)
       const soma = lista.reduce((s, v) => s + (v.estoque || 0), 0)
       await supabase.from('produtos').update({ estoque: soma }).eq('id', produtoGradeSel.id)
+      await carregarDados()
+    }
+  }
+
+  const regenerarCodigoVar = async (idVar) => {
+    const novoCode = gerarCodigoEAN13()
+    const { error } = await supabase.from('variacoes_grade').update({ codigo_barras: novoCode }).eq('id', idVar)
+    if (!error) {
+      setVariacoesDoProd(variacoesDoProd.map(v => v.id === idVar ? { ...v, codigo_barras: novoCode } : v))
       await carregarDados()
     }
   }
@@ -305,9 +384,20 @@ export default function Produtos() {
 
         /* Modal Grade */
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
-        .modal-card { background: #ffffff; width: 100%; max-width: 660px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        .modal-card { background: #ffffff; width: 100%; max-width: 780px; max-height: 92vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem; }
         .modal-title { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+
+        /* Construtor de Matriz */
+        .matriz-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem; }
+        .matriz-section-title { font-size: 0.75rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .presets-bar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        .btn-preset { font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #334155; font-weight: 600; cursor: pointer; }
+        .btn-preset:hover { background: #f1f5f9; border-color: #94a3b8; }
+
+        .chips-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+        .chip-selectable { padding: 6px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 0.85rem; font-weight: 600; color: #334155; cursor: pointer; transition: all 0.1s; }
+        .chip-selectable.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
         @media (max-width: 768px) {
           .form-row { flex-direction: column; gap: 0.75rem; }
@@ -328,7 +418,7 @@ export default function Produtos() {
               <label>Nome do Produto / Modelo</label>
               <input 
                 type="text" 
-                placeholder="Ex: Vestido Midi Canelado"
+                placeholder="Ex: Camisa Polo Piquet"
                 value={nome}
                 onChange={e => setNome(e.target.value)}
                 required
@@ -554,93 +644,153 @@ export default function Produtos() {
         )}
       </div>
 
-      {/* MODAL DE GERENCIAMENTO DE GRADE */}
+      {/* MODAL CONSTRUTOR DE MATRIZ DE GRADE */}
       {modalGradeAberto && produtoGradeSel && (
         <div className="modal-overlay" onClick={() => setModalGradeAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h3 className="modal-title">Grade: {produtoGradeSel.nome}</h3>
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Adicione variações de tamanho, cor e gere códigos individuais</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Gere combinações em lote com códigos EAN-13 exclusivos</span>
               </div>
               <button onClick={() => setModalGradeAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
             </div>
 
-            {/* Formulário de Nova Variação */}
-            <form onSubmit={adicionarVariacao} style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                Nova Variação (Tamanho / Cor)
-              </span>
-
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <input 
-                  type="text" 
-                  placeholder="Tam (P, M, 38)" 
-                  value={novoTamanho} 
-                  onChange={e => setNovoTamanho(e.target.value)}
-                  style={{ flex: 1, minWidth: '85px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
-                />
-                <input 
-                  type="text" 
-                  placeholder="Cor (Preto, Nude)" 
-                  value={novaCor} 
-                  onChange={e => setNovaCor(e.target.value)}
-                  style={{ flex: 1.2, minWidth: '100px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
-                />
-                <input 
-                  type="number" 
-                  min="0"
-                  placeholder="Qtd" 
-                  value={novoEstoqueVar} 
-                  onChange={e => setNovoEstoqueVar(e.target.value)}
-                  style={{ width: '60px', height: '38px', padding: '0 6px', border: '1px solid #cbd5e1', borderRadius: '8px', textAlign: 'center' }}
-                  required
-                />
-                
-                {/* Campo Código da Variação com Botão Gerar */}
-                <div style={{ display: 'flex', gap: '4px', flex: 2, minWidth: '180px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Código da Etiqueta" 
-                    value={novoBarcodeVar} 
-                    onChange={e => setNovoBarcodeVar(e.target.value)}
-                    style={{ flex: 1, height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem' }}
-                  />
-                  <button 
-                    type="button" 
-                    className="btn-gerar-code"
-                    onClick={() => setNovoBarcodeVar(gerarCodigoEAN13())}
-                    title="Gerar código de barras EAN-13 para esta variação"
-                  >
-                    <IconZap /> Gerar
+            {/* Gerador de Matriz Inteligente */}
+            <div className="matriz-box">
+              <div className="matriz-section-title">
+                <span>1. Escolha os Tamanhos</span>
+                <div className="presets-bar">
+                  <button type="button" className="btn-preset" onClick={() => aplicarPredefinicaoTamanho('vestuario')}>
+                    👕 Vestuário (PP ao GG)
+                  </button>
+                  <button type="button" className="btn-preset" onClick={() => aplicarPredefinicaoTamanho('calcados')}>
+                    👟 Calçados (34 ao 44)
+                  </button>
+                  <button type="button" className="btn-preset" onClick={() => aplicarPredefinicaoTamanho('perfumaria')}>
+                    🧴 Perfumaria (30ml a 200ml)
+                  </button>
+                  <button type="button" className="btn-preset" onClick={() => setTamanhosSelecionados([])} style={{ color: '#dc2626' }}>
+                    Limpar
                   </button>
                 </div>
+              </div>
 
-                <button type="submit" className="btn btn-primary" disabled={salvandoVar} style={{ height: '38px', padding: '0 12px' }}>
-                  <IconPlus /> Adicionar
+              {/* Chips de Tamanhos Selecionáveis */}
+              <div className="chips-grid">
+                {['PP', 'P', 'M', 'G', 'GG', 'XGG', '34', '36', '38', '40', '42', '44', '50ml', '100ml'].map(tam => (
+                  <button 
+                    key={tam}
+                    type="button" 
+                    className={`chip-selectable ${tamanhosSelecionados.includes(tam) ? 'active' : ''}`}
+                    onClick={() => toggleTamanho(tam)}
+                  >
+                    {tam}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input para Tamanho Customizado */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem' }}>
+                <input 
+                  type="text" 
+                  placeholder="Outro tamanho (ex: G1, 46, Único)" 
+                  value={customTamInput}
+                  onChange={e => setCustomTamInput(e.target.value)}
+                  style={{ height: '34px', fontSize: '0.85rem', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '6px', width: '220px' }}
+                />
+                <button type="button" className="btn-preset" onClick={adicionarTamanhoCustom}>
+                  + Adicionar Tam
                 </button>
               </div>
-            </form>
+
+              <div className="matriz-section-title">
+                <span>2. Escolha as Cores / Variações</span>
+                <button type="button" className="btn-preset" onClick={() => setCoresSelecionadas([])} style={{ color: '#dc2626' }}>
+                  Limpar Cores
+                </button>
+              </div>
+
+              {/* Chips de Cores Selecionáveis */}
+              <div className="chips-grid">
+                {CORES_COMUNS.map(cor => (
+                  <button 
+                    key={cor}
+                    type="button" 
+                    className={`chip-selectable ${coresSelecionadas.includes(cor) ? 'active' : ''}`}
+                    onClick={() => toggleCor(cor)}
+                  >
+                    {cor}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input para Cor Customizada */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem' }}>
+                <input 
+                  type="text" 
+                  placeholder="Outra cor (ex: Estampado, Dourado)" 
+                  value={customCorInput}
+                  onChange={e => setCustomCorInput(e.target.value)}
+                  style={{ height: '34px', fontSize: '0.85rem', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '6px', width: '220px' }}
+                />
+                <button type="button" className="btn-preset" onClick={adicionarCorCustom}>
+                  + Adicionar Cor
+                </button>
+              </div>
+
+              {/* Rodapé do Construtor */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '10px', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Estoque Padrão por Peça:</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={estoquePadraoMatriz} 
+                    onChange={e => setEstoquePadraoMatriz(e.target.value)}
+                    style={{ width: '60px', height: '34px', textAlign: 'center', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  />
+                </div>
+
+                {(() => {
+                  const qtdTams = tamanhosSelecionados.length || 1
+                  const qtdCores = coresSelecionadas.length || 1
+                  const totalPrevisto = (tamanhosSelecionados.length === 0 && coresSelecionadas.length === 0) ? 0 : (qtdTams * qtdCores)
+
+                  return (
+                    <button 
+                      type="button" 
+                      className="btn btn-primary"
+                      onClick={gerarMatrizCombinacoes}
+                      disabled={gerandoMatriz || totalPrevisto === 0}
+                      style={{ gap: '6px' }}
+                    >
+                      <IconZap /> {gerandoMatriz ? 'Gerando...' : `Gerar ${totalPrevisto} Variações c/ EAN-13`}
+                    </button>
+                  )
+                })()}
+              </div>
+            </div>
 
             {/* Tabela de Variações Existentes */}
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-              Variações Cadastradas ({variacoesDoProd.length})
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+              Variações Ativas no Estoque ({variacoesDoProd.length})
             </span>
 
             {variacoesDoProd.length === 0 ? (
-              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem', background: '#f8fafc', borderRadius: '8px' }}>
-                Nenhuma variação criada ainda. Use o formulário acima para adicionar tamanhos ou cores.
+              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem', background: '#f8fafc', borderRadius: '10px' }}>
+                Nenhuma variação criada. Use os botões acima para gerar a matriz em lote.
               </p>
             ) : (
-              <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', fontSize: '0.85rem' }}>
                   <thead>
                     <tr>
                       <th style={{ padding: '6px 8px' }}>Tamanho</th>
                       <th style={{ padding: '6px 8px' }}>Cor</th>
-                      <th style={{ padding: '6px 8px' }}>Código Etiqueta</th>
+                      <th style={{ padding: '6px 8px' }}>Código EAN-13 Exclusivo</th>
                       <th style={{ padding: '6px 8px', textAlign: 'center' }}>Estoque</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>Ação</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -648,7 +798,11 @@ export default function Produtos() {
                       <tr key={v.id}>
                         <td style={{ padding: '8px' }}><strong>{v.tamanho || '-'}</strong></td>
                         <td style={{ padding: '8px' }}>{v.cor || '-'}</td>
-                        <td style={{ padding: '8px', fontFamily: 'monospace', color: '#64748b' }}>{v.codigo_barras || '-'}</td>
+                        <td style={{ padding: '8px', fontFamily: 'monospace', color: '#1e293b' }}>
+                          <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                            {v.codigo_barras || '-'}
+                          </span>
+                        </td>
                         <td style={{ padding: '8px', textAlign: 'center' }}>
                           <input 
                             type="number" 
@@ -659,9 +813,24 @@ export default function Produtos() {
                           />
                         </td>
                         <td style={{ padding: '8px', textAlign: 'center' }}>
-                          <button onClick={() => excluirVariacao(v.id)} style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>
-                            <IconTrash />
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                            <button 
+                              type="button" 
+                              onClick={() => regenerarCodigoVar(v.id)} 
+                              title="Regerar novo código de barras"
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#2563eb' }}
+                            >
+                              <IconZap />
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => excluirVariacao(v.id)} 
+                              title="Remover variação"
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#dc2626' }}
+                            >
+                              <IconTrash />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
