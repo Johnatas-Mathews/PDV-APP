@@ -2,12 +2,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 // Ícones SVG nativos minimalistas
-const IconPackage = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" />
-  </svg>
-)
-
 const IconPlus = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12h14" /><path d="M12 5v14" />
@@ -33,6 +27,12 @@ const IconTag = () => (
   </svg>
 )
 
+const IconBarcode = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 5v14" /><path d="M8 5v14" /><path d="M12 5v14" /><path d="M17 5v14" /><path d="M21 5v14" />
+  </svg>
+)
+
 export default function Produtos() {
   const [produtos, setProdutos] = useState([])
   const [categoriasExistentes, setCategoriasExistentes] = useState([])
@@ -42,6 +42,7 @@ export default function Produtos() {
   // Formulário
   const [idEditando, setIdEditando] = useState(null)
   const [nome, setNome] = useState('')
+  const [codigoBarras, setCodigoBarras] = useState('')
   const [categoria, setCategoria] = useState('')
   const [preco, setPreco] = useState('')
   const [precoCusto, setPrecoCusto] = useState('')
@@ -56,7 +57,6 @@ export default function Produtos() {
 
     if (!error && data) {
       setProdutos(data)
-      // Extrai todas as categorias únicas cadastradas (limpando espaços e vazios)
       const catsUnicas = Array.from(
         new Set(
           data
@@ -75,6 +75,7 @@ export default function Produtos() {
   const limparFormulario = () => {
     setIdEditando(null)
     setNome('')
+    setCodigoBarras('')
     setCategoria('')
     setPreco('')
     setPrecoCusto('')
@@ -84,6 +85,7 @@ export default function Produtos() {
   const iniciarEdicao = (prod) => {
     setIdEditando(prod.id)
     setNome(prod.nome || '')
+    setCodigoBarras(prod.codigo_barras || '')
     setCategoria(prod.categoria || 'Geral')
     setPreco(prod.preco ? String(prod.preco) : '')
     setPrecoCusto(prod.preco_custo ? String(prod.preco_custo) : '')
@@ -103,6 +105,7 @@ export default function Produtos() {
 
     const payload = {
       nome: nome.trim(),
+      codigo_barras: codigoBarras.trim() || null,
       categoria: categoria.trim() || 'Geral',
       preco: parseFloat(preco.replace(',', '.')) || 0,
       preco_custo: precoCusto ? parseFloat(precoCusto.replace(',', '.')) : 0,
@@ -151,9 +154,9 @@ export default function Produtos() {
     }
   }
 
-  // Filtros combinados de busca e categoria
   const produtosFiltrados = produtos.filter(p => {
-    const atendeBusca = p.nome.toLowerCase().includes(busca.toLowerCase())
+    const termo = busca.toLowerCase()
+    const atendeBusca = p.nome.toLowerCase().includes(termo) || (p.codigo_barras && p.codigo_barras.includes(termo))
     const catProd = (p.categoria || 'Geral').toLowerCase()
     const atendeCategoria = categoriaFiltro === 'todas' || catProd === categoriaFiltro.toLowerCase()
     return atendeBusca && atendeCategoria
@@ -188,7 +191,7 @@ export default function Produtos() {
         .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
 
         .filter-section { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
-        .search-input { height: 40px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 12px; font-size: 0.9rem; width: 260px; }
+        .search-input { height: 40px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 12px; font-size: 0.9rem; width: 280px; }
         .cat-pills { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
         .pill { padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .pill.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
@@ -198,6 +201,7 @@ export default function Produtos() {
         td { padding: 1rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         tbody tr:hover { background: #f8fafc; }
         .badge-cat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #334155; font-size: 0.78rem; font-weight: 600; }
+        .barcode-tag { display: inline-flex; align-items: center; gap: 4px; font-family: monospace; font-size: 0.75rem; color: #64748b; background: #f8fafc; padding: 2px 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-top: 3px; }
         .estoque-baixo { color: #dc2626; font-weight: 700; background: #fef2f2; padding: 2px 6px; border-radius: 4px; }
         @media (max-width: 768px) {
           .form-row { flex-direction: column; gap: 0.75rem; }
@@ -207,10 +211,9 @@ export default function Produtos() {
 
       <div className="page-header">
         <h1 className="page-title">Catálogo de Produtos</h1>
-        <p className="page-subtitle">Cadastre mercadorias, organize por categoria e monitore o estoque</p>
+        <p className="page-subtitle">Cadastre mercadorias, códigos de barras e monitore o estoque</p>
       </div>
 
-      {/* Formulário de Cadastro / Edição */}
       <div className="card-box">
         <h2>{idEditando ? 'Editar Produto' : 'Novo Produto'}</h2>
         <form onSubmit={salvarProduto}>
@@ -219,20 +222,29 @@ export default function Produtos() {
               <label>Nome do Produto</label>
               <input 
                 type="text" 
-                placeholder="Ex: Coca-Cola 2L, Camiseta Básica, etc."
+                placeholder="Ex: Camiseta Oversized Lisa Preta M"
                 value={nome}
                 onChange={e => setNome(e.target.value)}
                 required
               />
             </div>
 
-            {/* Campo de Categoria com Sugestões Dinâmicas */}
+            <div className="form-group" style={{ flex: 1.2 }}>
+              <label>Código de Barras (EAN/Etiqueta)</label>
+              <input 
+                type="text" 
+                placeholder="Ex: 7891234567890"
+                value={codigoBarras}
+                onChange={e => setCodigoBarras(e.target.value)}
+              />
+            </div>
+
             <div className="form-group" style={{ flex: 1.5 }}>
-              <label>Categoria (Digite ou escolha abaixo)</label>
+              <label>Categoria</label>
               <input 
                 type="text" 
                 list="lista-categorias"
-                placeholder="Ex: Bebidas, Roupas, Alimentos"
+                placeholder="Ex: Roupas, Perfumes"
                 value={categoria}
                 onChange={e => setCategoria(e.target.value)}
               />
@@ -242,7 +254,6 @@ export default function Produtos() {
                 ))}
               </datalist>
 
-              {/* Chips rápidos de categorias já salvas */}
               {categoriasExistentes.length > 0 && (
                 <div className="chips-container">
                   {categoriasExistentes.map(cat => (
@@ -308,10 +319,8 @@ export default function Produtos() {
         </form>
       </div>
 
-      {/* Listagem de Produtos com Filtro por Categoria */}
       <div className="card-box">
         <div className="filter-section">
-          {/* Pílulas de filtro de categorias */}
           <div className="cat-pills">
             <button 
               className={`pill ${categoriaFiltro === 'todas' ? 'active' : ''}`}
@@ -336,7 +345,7 @@ export default function Produtos() {
           <input 
             type="text" 
             className="search-input" 
-            placeholder="Buscar produto por nome..." 
+            placeholder="Buscar por nome ou código de barras..." 
             value={busca}
             onChange={e => setBusca(e.target.value)}
           />
@@ -344,13 +353,13 @@ export default function Produtos() {
 
         {produtosFiltrados.length === 0 ? (
           <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
-            Nenhum produto encontrado nessa categoria.
+            Nenhum produto encontrado.
           </p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Produto</th>
+                <th>Produto / Código</th>
                 <th>Categoria</th>
                 <th>Custo</th>
                 <th>Venda</th>
@@ -368,7 +377,14 @@ export default function Produtos() {
 
                 return (
                   <tr key={prod.id}>
-                    <td><strong>{prod.nome}</strong></td>
+                    <td>
+                      <div><strong>{prod.nome}</strong></div>
+                      {prod.codigo_barras && (
+                        <span className="barcode-tag">
+                          <IconBarcode /> {prod.codigo_barras}
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <span className="badge-cat">
                         <IconTag /> {prod.categoria || 'Geral'}
