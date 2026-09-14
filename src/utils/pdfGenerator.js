@@ -1,6 +1,5 @@
 import { supabase } from '../supabase'
 
-// Fallback caso o banco esteja indisponível
 export const DADOS_EMPRESA_PADRAO = {
   nome: 'MINHA LOJA',
   documento: '',
@@ -17,7 +16,6 @@ export const formatarIdVenda = (id) => {
   return String(id || 0).padStart(5, '0')
 }
 
-// Busca as configurações da loja em tempo real no Supabase
 export const obterDadosEmpresaAtualizados = async () => {
   try {
     const { data } = await supabase.from('configuracoes').select('*')
@@ -39,6 +37,14 @@ export const obterDadosEmpresaAtualizados = async () => {
     console.error('Erro ao buscar dados da empresa:', err)
   }
   return DADOS_EMPRESA_PADRAO
+}
+
+// FORMATADOR DE FORMA DE PAGAMENTO (SUPORTA MISTO)
+const formatarTextoPagamento = (venda) => {
+  if (venda.forma_pagamento === 'misto' && Array.isArray(venda.pagamentos_detalhe) && venda.pagamentos_detalhe.length > 0) {
+    return venda.pagamentos_detalhe.map(p => `${p.tipo.toUpperCase()}: R$ ${Number(p.valor).toFixed(2)}`).join(' + ')
+  }
+  return (venda.forma_pagamento || 'dinheiro').toUpperCase()
 }
 
 // GERAÇÃO DO CUPOM DIGITAL PARA WHATSAPP
@@ -76,6 +82,8 @@ export const gerarTextoCupomWhatsApp = (venda, dadosEmpresaCustom = null, novoCa
     blocoCashback = `\n🎁 *Cashback Ganho Hoje:* R$ ${novoCashback.toFixed(2)}\nSaldo Total Disponível: R$ ${Number(venda.clientes?.saldo_cashback || 0).toFixed(2)}\n`
   }
 
+  const textoPagto = formatarTextoPagamento(venda)
+
   return (
     `🧾 *${empresa.nome.toUpperCase()}*\n` +
     (empresa.documento ? `${empresa.documento}\n` : '') +
@@ -91,14 +99,14 @@ export const gerarTextoCupomWhatsApp = (venda, dadosEmpresaCustom = null, novoCa
     `Total Produtos: R$ ${subtotalItens.toFixed(2)}` +
     blocoDesconto + '\n' +
     `*TOTAL PAGO: R$ ${totalCobrado.toFixed(2)}*\n` +
-    `Forma de Pagto: ${(venda.forma_pagamento || 'dinheiro').toUpperCase()}\n` +
+    `Pagamento: ${textoPagto}\n` +
     blocoCashback +
     `--------------------------------\n` +
     `${empresa.mensagemCupom || 'Obrigado pela preferência! Volte sempre.'}`
   )
 }
 
-// COMPROVANTE DE VENDA (TÉRMICO / IMPRESSÃO)
+// COMPROVANTE DE VENDA (IMPRESSÃO / PDF)
 export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) => {
   const empresa = dadosEmpresaManual || await obterDadosEmpresaAtualizados()
   const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
@@ -131,6 +139,16 @@ export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) =>
     `
   }).join('')
 
+  let linhasPagtoMistoHtml = ''
+  if (venda.forma_pagamento === 'misto' && Array.isArray(venda.pagamentos_detalhe)) {
+    linhasPagtoMistoHtml = venda.pagamentos_detalhe.map(p => `
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 2px;">
+        <span>• ${p.tipo.toUpperCase()}:</span>
+        <strong>R$ ${Number(p.valor).toFixed(2)}</strong>
+      </div>
+    `).join('')
+  }
+
   const blocoTotaisHtml = `
     <div style="margin-top: 14px; border-top: 1px solid #0f172a; padding-top: 8px;">
       <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #475569;">
@@ -149,6 +167,13 @@ export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) =>
         <span>TOTAL FINAL:</span>
         <span>R$ ${totalCobrado.toFixed(2)}</span>
       </div>
+
+      ${linhasPagtoMistoHtml ? `
+      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">
+        <span style="font-size: 11px; font-weight: 700; color: #334155;">Detalhamento do Pagamento:</span>
+        ${linhasPagtoMistoHtml}
+      </div>
+      ` : ''}
     </div>
   `
 
@@ -191,7 +216,7 @@ export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) =>
             <div><strong>PEDIDO: #${codVenda}</strong></div>
             <div>Data: ${dataVenda}</div>
             <div>Cliente: ${venda.clientes?.nome || 'Cliente Avulso'}</div>
-            <div>Forma Pagto: ${(venda.forma_pagamento || 'dinheiro').toUpperCase()}</div>
+            <div>Forma Pagto: ${venda.forma_pagamento === 'misto' ? 'PAGAMENTO MISTO' : (venda.forma_pagamento || 'dinheiro').toUpperCase()}</div>
           </div>
 
           <table>
@@ -222,7 +247,7 @@ export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) =>
   }
 }
 
-// COMPROVANTE DE CONDICIONAL (MALA DE ROUPAS)
+// COMPROVANTE DE CONDICIONAL
 export const gerarComprovanteCondicional = async (condicional, dadosEmpresaManual = null) => {
   const empresa = dadosEmpresaManual || await obterDadosEmpresaAtualizados()
   const codCond = formatarIdVenda(condicional.id)
