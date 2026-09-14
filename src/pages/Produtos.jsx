@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
-// Ícones SVG nativos minimalistas
+// Ícones SVG minimalistas nativos
 const IconPlus = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12h14" /><path d="M12 5v14" />
   </svg>
 )
 
 const IconEdit = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
   </svg>
 )
 
 const IconTrash = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
   </svg>
 )
@@ -28,18 +28,27 @@ const IconTag = () => (
 )
 
 const IconBarcode = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 5v14" /><path d="M8 5v14" /><path d="M12 5v14" /><path d="M17 5v14" /><path d="M21 5v14" />
+  </svg>
+)
+
+const IconLayers = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+    <polyline points="2 17 12 22 22 17" />
+    <polyline points="2 12 12 17 22 12" />
   </svg>
 )
 
 export default function Produtos() {
   const [produtos, setProdutos] = useState([])
+  const [variacoes, setVariacoes] = useState([])
   const [categoriasExistentes, setCategoriasExistentes] = useState([])
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
   const [busca, setBusca] = useState('')
 
-  // Formulário
+  // Formulário Produto Pai
   const [idEditando, setIdEditando] = useState(null)
   const [nome, setNome] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
@@ -49,27 +58,30 @@ export default function Produtos() {
   const [estoque, setEstoque] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  const carregarProdutos = async () => {
-    const { data, error } = await supabase
-      .from('produtos')
-      .select('*')
-      .order('nome', { ascending: true })
+  // Modal de Grade
+  const [modalGradeAberto, setModalGradeAberto] = useState(false)
+  const [produtoGradeSel, setProdutoGradeSel] = useState(null)
+  const [variacoesDoProd, setVariacoesDoProd] = useState([])
+  const [novoTamanho, setNovoTamanho] = useState('')
+  const [novaCor, setNovaCor] = useState('')
+  const [novoEstoqueVar, setNovoEstoqueVar] = useState('1')
+  const [novoBarcodeVar, setNovoBarcodeVar] = useState('')
+  const [salvandoVar, setSalvandoVar] = useState(false)
 
-    if (!error && data) {
-      setProdutos(data)
-      const catsUnicas = Array.from(
-        new Set(
-          data
-            .map(p => (p.categoria ? p.categoria.trim() : 'Geral'))
-            .filter(Boolean)
-        )
-      ).sort()
+  const carregarDados = async () => {
+    const { data: prodData } = await supabase.from('produtos').select('*').order('nome', { ascending: true })
+    const { data: varData } = await supabase.from('variacoes_grade').select('*')
+
+    if (prodData) {
+      setProdutos(prodData)
+      const catsUnicas = Array.from(new Set(prodData.map(p => (p.categoria ? p.categoria.trim() : 'Geral')).filter(Boolean))).sort()
       setCategoriasExistentes(catsUnicas)
     }
+    if (varData) setVariacoes(varData)
   }
 
   useEffect(() => {
-    carregarProdutos()
+    carregarDados()
   }, [])
 
   const limparFormulario = () => {
@@ -95,62 +107,119 @@ export default function Produtos() {
 
   const salvarProduto = async (e) => {
     e.preventDefault()
-
-    if (!nome.trim() || !preco) {
-      alert('Preencha ao menos o Nome e o Preço de Venda.')
-      return
-    }
+    if (!nome.trim() || !preco) return alert('Preencha Nome e Preço de Venda.')
 
     setSalvando(true)
-
     const payload = {
       nome: nome.trim(),
       codigo_barras: codigoBarras.trim() || null,
       categoria: categoria.trim() || 'Geral',
-      preco: parseFloat(preco.replace(',', '.')) || 0,
-      preco_custo: precoCusto ? parseFloat(precoCusto.replace(',', '.')) : 0,
+      preco: parseFloat(String(preco).replace(',', '.')) || 0,
+      preco_custo: precoCusto ? parseFloat(String(precoCusto).replace(',', '.')) : 0,
       estoque: parseInt(estoque) || 0
     }
 
     try {
       if (idEditando) {
-        const { error } = await supabase
-          .from('produtos')
-          .update(payload)
-          .eq('id', idEditando)
-
+        const { error } = await supabase.from('produtos').update(payload).eq('id', idEditando)
         if (error) throw error
         alert('Produto atualizado com sucesso!')
       } else {
-        const { error } = await supabase
-          .from('produtos')
-          .insert([payload])
-
+        const { error } = await supabase.from('produtos').insert([payload])
         if (error) throw error
         alert('Produto cadastrado com sucesso!')
       }
-
       limparFormulario()
-      await carregarProdutos()
+      await carregarDados()
     } catch (err) {
       alert('Erro ao salvar produto: ' + err.message)
     }
-
     setSalvando(false)
   }
 
   const excluirProduto = async (id, nomeProd) => {
     if (!confirm(`Deseja realmente excluir o produto "${nomeProd}"?`)) return
+    const { error } = await supabase.from('produtos').delete().eq('id', id)
+    if (error) alert('Erro ao excluir: ' + error.message)
+    else carregarDados()
+  }
 
-    const { error } = await supabase
-      .from('produtos')
-      .delete()
-      .eq('id', id)
+  // GERENCIAR GRADE
+  const abrirGrade = (prod) => {
+    setProdutoGradeSel(prod)
+    const vars = variacoes.filter(v => v.produto_id === prod.id)
+    setVariacoesDoProd(vars)
+    setNovoTamanho('')
+    setNovaCor('')
+    setNovoEstoqueVar('1')
+    setNovoBarcodeVar('')
+    setModalGradeAberto(true)
+  }
 
-    if (error) {
-      alert('Erro ao excluir: ' + error.message)
-    } else {
-      carregarProdutos()
+  const adicionarVariacao = async (e) => {
+    e.preventDefault()
+    if (!novoTamanho.trim() && !novaCor.trim()) {
+      return alert('Informe ao menos o Tamanho ou a Cor da variação.')
+    }
+
+    setSalvandoVar(true)
+    const payload = {
+      produto_id: produtoGradeSel.id,
+      tamanho: novoTamanho.trim().toUpperCase() || null,
+      cor: novaCor.trim() || null,
+      estoque: parseInt(novoEstoqueVar) || 0,
+      codigo_barras: novoBarcodeVar.trim() || null
+    }
+
+    try {
+      const { data, error } = await supabase.from('variacoes_grade').insert([payload]).select().single()
+      if (error) throw error
+
+      const listaAtualizada = [...variacoesDoProd, data]
+      setVariacoesDoProd(listaAtualizada)
+
+      // Atualiza o estoque total do produto no banco com base na soma da grade
+      const somaEstoqueGrade = listaAtualizada.reduce((s, v) => s + (v.estoque || 0), 0)
+      await supabase.from('produtos').update({ estoque: somaEstoqueGrade }).eq('id', produtoGradeSel.id)
+
+      setNovoTamanho('')
+      setNovaCor('')
+      setNovoEstoqueVar('1')
+      setNovoBarcodeVar('')
+      await carregarDados()
+    } catch (err) {
+      alert('Erro ao adicionar variação: ' + err.message)
+    }
+    setSalvandoVar(false)
+  }
+
+  const excluirVariacao = async (idVar) => {
+    if (!confirm('Deseja remover esta variação da grade?')) return
+    try {
+      const { error } = await supabase.from('variacoes_grade').delete().eq('id', idVar)
+      if (error) throw error
+
+      const listaAtualizada = variacoesDoProd.filter(v => v.id !== idVar)
+      setVariacoesDoProd(listaAtualizada)
+
+      const somaEstoqueGrade = listaAtualizada.reduce((s, v) => s + (v.estoque || 0), 0)
+      await supabase.from('produtos').update({ estoque: somaEstoqueGrade }).eq('id', produtoGradeSel.id)
+
+      await carregarDados()
+    } catch (err) {
+      alert('Erro ao remover: ' + err.message)
+    }
+  }
+
+  const atualizarEstoqueRapidoVar = async (idVar, novoEstoque) => {
+    const qtd = parseInt(novoEstoque) || 0
+    const { error } = await supabase.from('variacoes_grade').update({ estoque: qtd }).eq('id', idVar)
+    if (!error) {
+      const lista = variacoesDoProd.map(v => v.id === idVar ? { ...v, estoque: qtd } : v)
+      setVariacoesDoProd(lista)
+      const soma = lista.reduce((s, v) => s + (v.estoque || 0), 0)
+      await supabase.from('produtos').update({ estoque: soma }).eq('id', produtoGradeSel.id)
+      await carregarDados()
     }
   }
 
@@ -178,8 +247,7 @@ export default function Produtos() {
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
         
         .chips-container { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-        .chip-cat { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; transition: all 0.15s; }
-        .chip-cat:hover { background: #e2e8f0; color: #0f172a; }
+        .chip-cat { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; }
         .chip-cat.selected { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; font-weight: 600; }
 
         .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; }
@@ -188,6 +256,8 @@ export default function Produtos() {
         .btn-secondary { background: #f1f5f9; color: #475569; }
         .btn-secondary:hover { background: #e2e8f0; color: #0f172a; }
         .btn-danger { background: #fee2e2; color: #dc2626; }
+        .btn-grade { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        .btn-grade:hover { background: #dcfce7; }
         .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
 
         .filter-section { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
@@ -202,7 +272,15 @@ export default function Produtos() {
         tbody tr:hover { background: #f8fafc; }
         .badge-cat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #334155; font-size: 0.78rem; font-weight: 600; }
         .barcode-tag { display: inline-flex; align-items: center; gap: 4px; font-family: monospace; font-size: 0.75rem; color: #64748b; background: #f8fafc; padding: 2px 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-top: 3px; }
-        .estoque-baixo { color: #dc2626; font-weight: 700; background: #fef2f2; padding: 2px 6px; border-radius: 4px; }
+        
+        .var-chip { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 2px 6px; font-size: 0.75rem; margin: 2px; }
+
+        /* Modal Grade */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
+        .modal-card { background: #ffffff; width: 100%; max-width: 620px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem; }
+        .modal-title { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+
         @media (max-width: 768px) {
           .form-row { flex-direction: column; gap: 0.75rem; }
           .search-input { width: 100%; }
@@ -211,18 +289,18 @@ export default function Produtos() {
 
       <div className="page-header">
         <h1 className="page-title">Catálogo de Produtos</h1>
-        <p className="page-subtitle">Cadastre mercadorias, códigos de barras e monitore o estoque</p>
+        <p className="page-subtitle">Cadastre modelos, códigos de barras e gerencie grades de tamanhos e cores</p>
       </div>
 
       <div className="card-box">
-        <h2>{idEditando ? 'Editar Produto' : 'Novo Produto'}</h2>
+        <h2>{idEditando ? 'Editar Produto' : 'Novo Produto (Modelo Base)'}</h2>
         <form onSubmit={salvarProduto}>
           <div className="form-row">
             <div className="form-group" style={{ flex: 2 }}>
-              <label>Nome do Produto</label>
+              <label>Nome do Produto / Modelo</label>
               <input 
                 type="text" 
-                placeholder="Ex: Camiseta Oversized Lisa Preta M"
+                placeholder="Ex: Vestido Midi Canelado"
                 value={nome}
                 onChange={e => setNome(e.target.value)}
                 required
@@ -230,7 +308,7 @@ export default function Produtos() {
             </div>
 
             <div className="form-group" style={{ flex: 1.2 }}>
-              <label>Código de Barras (EAN/Etiqueta)</label>
+              <label>Código de Barras Geral (Opcional)</label>
               <input 
                 type="text" 
                 placeholder="Ex: 7891234567890"
@@ -296,7 +374,7 @@ export default function Produtos() {
             </div>
 
             <div className="form-group">
-              <label>Estoque Atual</label>
+              <label>Estoque Inicial (Sem Grade)</label>
               <input 
                 type="number" 
                 placeholder="0"
@@ -359,12 +437,11 @@ export default function Produtos() {
           <table>
             <thead>
               <tr>
-                <th>Produto / Código</th>
+                <th>Produto / Grade</th>
                 <th>Categoria</th>
                 <th>Custo</th>
                 <th>Venda</th>
-                <th>Margem Estimada</th>
-                <th>Estoque</th>
+                <th>Estoque Total</th>
                 <th style={{ textAlign: 'center' }}>Ações</th>
               </tr>
             </thead>
@@ -372,8 +449,8 @@ export default function Produtos() {
               {produtosFiltrados.map(prod => {
                 const venda = Number(prod.preco || 0)
                 const custo = Number(prod.preco_custo || 0)
-                const margem = venda > 0 && custo > 0 ? (((venda - custo) / venda) * 100).toFixed(0) : null
-                const isEstoqueBaixo = (prod.estoque || 0) <= 3
+                const varsDesteProd = variacoes.filter(v => v.produto_id === prod.id)
+                const temGrade = varsDesteProd.length > 0
 
                 return (
                   <tr key={prod.id}>
@@ -384,6 +461,17 @@ export default function Produtos() {
                           <IconBarcode /> {prod.codigo_barras}
                         </span>
                       )}
+
+                      {/* Exibe as variações existentes */}
+                      {temGrade && (
+                        <div style={{ marginTop: '4px' }}>
+                          {varsDesteProd.map(v => (
+                            <span key={v.id} className="var-chip">
+                              <strong>{v.tamanho || 'U'}</strong>{v.cor ? ` (${v.cor})` : ''}: {v.estoque} un
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span className="badge-cat">
@@ -393,28 +481,24 @@ export default function Produtos() {
                     <td style={{ color: '#64748b' }}>R$ {custo.toFixed(2)}</td>
                     <td><strong>R$ {venda.toFixed(2)}</strong></td>
                     <td>
-                      {margem ? (
-                        <span style={{ color: Number(margem) >= 40 ? '#16a34a' : '#ea580c', fontWeight: 600 }}>
-                          {margem}%
-                        </span>
-                      ) : (
-                        <span style={{ color: '#94a3b8' }}>-</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={isEstoqueBaixo ? 'estoque-baixo' : ''}>
-                        {prod.estoque || 0} un
-                      </span>
+                      <strong>{prod.estoque || 0} un</strong>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <button 
-                          className="btn btn-sm btn-secondary" 
-                          onClick={() => iniciarEdicao(prod)}
-                          title="Editar produto"
+                          className="btn btn-sm btn-grade"
+                          onClick={() => abrirGrade(prod)}
+                          title="Gerenciar Grade de Tamanhos e Cores"
                           style={{ gap: '4px' }}
                         >
-                          <IconEdit /> Editar
+                          <IconLayers /> Grade ({varsDesteProd.length})
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-secondary" 
+                          onClick={() => iniciarEdicao(prod)}
+                          title="Editar dados"
+                        >
+                          <IconEdit />
                         </button>
                         <button 
                           className="btn btn-sm btn-danger" 
@@ -432,6 +516,118 @@ export default function Produtos() {
           </table>
         )}
       </div>
+
+      {/* MODAL DE GERENCIAMENTO DE GRADE */}
+      {modalGradeAberto && produtoGradeSel && (
+        <div className="modal-overlay" onClick={() => setModalGradeAberto(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title">Grade: {produtoGradeSel.nome}</h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Adicione variações de tamanho, cor e estoque</span>
+              </div>
+              <button onClick={() => setModalGradeAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+            </div>
+
+            {/* Formulário de Nova Variação */}
+            <form onSubmit={adicionarVariacao} style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                Nova Variação (Tamanho / Cor)
+              </span>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input 
+                  type="text" 
+                  placeholder="Tam (Ex: P, M, 38)" 
+                  value={novoTamanho} 
+                  onChange={e => setNovoTamanho(e.target.value)}
+                  style={{ flex: 1, minWidth: '90px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
+                />
+                <input 
+                  type="text" 
+                  placeholder="Cor (Ex: Preto, Nude)" 
+                  value={novaCor} 
+                  onChange={e => setNovaCor(e.target.value)}
+                  style={{ flex: 1.2, minWidth: '110px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
+                />
+                <input 
+                  type="number" 
+                  min="0"
+                  placeholder="Qtd" 
+                  value={novoEstoqueVar} 
+                  onChange={e => setNovoEstoqueVar(e.target.value)}
+                  style={{ width: '70px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px', textAlign: 'center' }}
+                  required
+                />
+                <input 
+                  type="text" 
+                  placeholder="Código de Barras Específico" 
+                  value={novoBarcodeVar} 
+                  onChange={e => setNovoBarcodeVar(e.target.value)}
+                  style={{ flex: 1.5, minWidth: '140px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={salvandoVar} style={{ height: '38px', padding: '0 12px' }}>
+                  <IconPlus /> Adicionar
+                </button>
+              </div>
+            </form>
+
+            {/* Tabela de Variações Existentes */}
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+              Variações Cadastradas ({variacoesDoProd.length})
+            </span>
+
+            {variacoesDoProd.length === 0 ? (
+              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem', background: '#f8fafc', borderRadius: '8px' }}>
+                Nenhuma variação criada ainda. Use o formulário acima para adicionar tamanhos ou cores.
+              </p>
+            ) : (
+              <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ padding: '6px 8px' }}>Tamanho</th>
+                      <th style={{ padding: '6px 8px' }}>Cor</th>
+                      <th style={{ padding: '6px 8px' }}>Código Etiqueta</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>Estoque</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {variacoesDoProd.map(v => (
+                      <tr key={v.id}>
+                        <td style={{ padding: '8px' }}><strong>{v.tamanho || '-'}</strong></td>
+                        <td style={{ padding: '8px' }}>{v.cor || '-'}</td>
+                        <td style={{ padding: '8px', fontFamily: 'monospace', color: '#64748b' }}>{v.codigo_barras || '-'}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                          <input 
+                            type="number" 
+                            min="0"
+                            defaultValue={v.estoque} 
+                            onBlur={e => atualizarEstoqueRapidoVar(v.id, e.target.value)}
+                            style={{ width: '60px', height: '28px', textAlign: 'center', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                          <button onClick={() => excluirVariacao(v.id)} style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>
+                            <IconTrash />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+              <button className="btn btn-secondary" onClick={() => setModalGradeAberto(false)}>
+                Concluir & Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
