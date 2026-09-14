@@ -10,6 +10,9 @@ export const DADOS_EMPRESA_PADRAO = {
   mensagemCupom: 'Obrigado pela preferência! Volte sempre.'
 }
 
+// Mantém retrocompatibilidade para Vendas.jsx e HistoricoVendas.jsx
+export const DADOS_EMPRESA = DADOS_EMPRESA_PADRAO
+
 export const formatarIdVenda = (id) => {
   return String(id || 0).padStart(5, '0')
 }
