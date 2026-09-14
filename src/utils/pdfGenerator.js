@@ -41,7 +41,64 @@ export const obterDadosEmpresaAtualizados = async () => {
   return DADOS_EMPRESA_PADRAO
 }
 
-// COMPROVANTE DE VENDA
+// GERAÇÃO DO CUPOM DIGITAL PARA WHATSAPP
+export const gerarTextoCupomWhatsApp = (venda, dadosEmpresaCustom = null, novoCashback = 0) => {
+  const empresa = { ...DADOS_EMPRESA_PADRAO, ...(dadosEmpresaCustom || {}) }
+  const codVenda = formatarIdVenda(venda.id)
+  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
+  const nomeCliente = venda.clientes?.nome || 'Cliente'
+  const itens = Array.isArray(venda.itens) ? venda.itens : []
+
+  const subtotalItens = itens.reduce((acc, item) => {
+    const qtd = Number(item.quantidade || 1)
+    const unit = Number(item.preco || 0)
+    return acc + (qtd * unit)
+  }, 0)
+
+  const totalCobrado = Number(venda.total || 0)
+  const valorDesconto = Math.max(0, subtotalItens - totalCobrado)
+
+  const textoItens = itens.map(item => {
+    const qtd = Number(item.quantidade || 1)
+    const unit = Number(item.preco || 0)
+    const totalItem = qtd * unit
+    const nomeProd = item.nomeProduto || item.nome || 'Produto'
+    return `• ${qtd}x ${nomeProd} - R$ ${totalItem.toFixed(2)}`
+  }).join('\n')
+
+  let blocoDesconto = ''
+  if (valorDesconto > 0.01) {
+    blocoDesconto = `\nDesconto Concedido: - R$ ${valorDesconto.toFixed(2)}`
+  }
+
+  let blocoCashback = ''
+  if (novoCashback > 0) {
+    blocoCashback = `\n🎁 *Cashback Ganho Hoje:* R$ ${novoCashback.toFixed(2)}\nSaldo Total Disponível: R$ ${Number(venda.clientes?.saldo_cashback || 0).toFixed(2)}\n`
+  }
+
+  return (
+    `🧾 *${empresa.nome.toUpperCase()}*\n` +
+    (empresa.documento ? `${empresa.documento}\n` : '') +
+    (empresa.telefone ? `Tel/WhatsApp: ${empresa.telefone}\n` : '') +
+    `--------------------------------\n` +
+    `*COMPROVANTE DE COMPRA #${codVenda}*\n` +
+    `Data: ${dataVenda}\n` +
+    `Cliente: *${nomeCliente}*\n` +
+    `--------------------------------\n` +
+    `*ITENS DO PEDIDO:*\n` +
+    `${textoItens}\n` +
+    `--------------------------------\n` +
+    `Total Produtos: R$ ${subtotalItens.toFixed(2)}` +
+    blocoDesconto + '\n' +
+    `*TOTAL PAGO: R$ ${totalCobrado.toFixed(2)}*\n` +
+    `Forma de Pagto: ${(venda.forma_pagamento || 'dinheiro').toUpperCase()}\n` +
+    blocoCashback +
+    `--------------------------------\n` +
+    `${empresa.mensagemCupom || 'Obrigado pela preferência! Volte sempre.'}`
+  )
+}
+
+// COMPROVANTE DE VENDA (TÉRMICO / IMPRESSÃO)
 export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) => {
   const empresa = dadosEmpresaManual || await obterDadosEmpresaAtualizados()
   const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
