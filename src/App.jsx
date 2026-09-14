@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
-import Vendas from './pages/Vendas'
+import Vendas from './pages/Vendas' // Tela de Frente de Caixa (PDV)
+import HistoricoVendas from './pages/HistoricoVendas' // Tela de Histórico de Vendas
 import Compras from './pages/Compras'
 import Clientes from './pages/Clientes'
 import Fornecedores from './pages/Fornecedores'
@@ -8,7 +9,7 @@ import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
 
-// Ícones SVG minimalistas nativos (sem dependências externas)
+// Ícones SVG minimalistas nativos
 const IconDashboard = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" />
@@ -16,10 +17,20 @@ const IconDashboard = () => (
   </svg>
 )
 
-const IconVendas = () => (
+const IconPDV = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
     <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+  </svg>
+)
+
+const IconVendasHistorico = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+    <line x1="10" y1="9" x2="8" y2="9" />
   </svg>
 )
 
@@ -52,7 +63,7 @@ const IconProdutos = () => (
 
 const IconContas = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
     <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
@@ -73,7 +84,8 @@ const IconLoja = () => (
 export default function App() {
   const links = [
     { to: '/', label: 'Dashboard', icon: IconDashboard },
-    { to: '/vendas', label: 'Vendas (PDV)', icon: IconVendas },
+    { to: '/pdv', label: 'PDV', icon: IconPDV },
+    { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico },
     { to: '/compras', label: 'Compras & Reposição', icon: IconCompras },
     { to: '/produtos', label: 'Produtos', icon: IconProdutos },
     { to: '/clientes', label: 'Clientes', icon: IconClientes },
@@ -137,7 +149,8 @@ export default function App() {
         <main className="app-main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/vendas" element={<Vendas />} />
+            <Route path="/pdv" element={<Vendas />} />
+            <Route path="/vendas" element={<HistoricoVendas />} />
             <Route path="/compras" element={<Compras />} />
             <Route path="/produtos" element={<Produtos />} />
             <Route path="/clientes" element={<Clientes />} />
