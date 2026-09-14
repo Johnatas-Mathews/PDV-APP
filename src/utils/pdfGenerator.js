@@ -1,35 +1,39 @@
-// Utilitário de geração e impressão de comprovante térmico/A4 sem bibliotecas pesadas
+// Utilitário de geração e impressão de comprovante térmico/A4 com dados dinâmicos da empresa
 
-export const DADOS_EMPRESA = {
+export const DADOS_EMPRESA_PADRAO = {
   nome: 'TECCO MODA & ESTILO',
   documento: 'CNPJ: 00.000.000/0001-00',
   endereco: 'Rua do Comércio, 100 - Centro',
-  telefone: '(11) 99999-9999'
+  cidadeUf: 'São Paulo - SP',
+  telefone: '(11) 99999-9999',
+  instagram: '@teccomoda',
+  mensagemCupom: 'Obrigado pela preferência! Volte sempre.'
 }
 
 export const formatarIdVenda = (id) => {
   return String(id || 0).padStart(5, '0')
 }
 
-export const gerarComprovanteVenda = (venda) => {
+export const gerarComprovanteVenda = (venda, dadosEmpresaCustom = null) => {
+  const empresa = { ...DADOS_EMPRESA_PADRAO, ...(dadosEmpresaCustom || {}) }
   const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
   const codVenda = formatarIdVenda(venda.id)
   const itens = Array.isArray(venda.itens) ? venda.itens : []
 
-  // 1. Soma o valor bruto de todos os produtos
+  // 1. Soma o valor bruto dos itens
   const subtotalItens = itens.reduce((acc, item) => {
     const qtd = Number(item.quantidade || 1)
     const unit = Number(item.preco || 0)
     return acc + (qtd * unit)
   }, 0)
 
-  // 2. Total final cobrado na venda
+  // 2. Total final cobrado
   const totalCobrado = Number(venda.total || 0)
 
   // 3. Diferença apurada como desconto
   const valorDesconto = Math.max(0, subtotalItens - totalCobrado)
 
-  // 4. Montagem das linhas da tabela de produtos
+  // 4. Linhas da tabela de produtos
   const linhasItensHtml = itens.map(item => {
     const qtd = Number(item.quantidade || 1)
     const unit = Number(item.preco || 0)
@@ -47,7 +51,7 @@ export const gerarComprovanteVenda = (venda) => {
     `
   }).join('')
 
-  // 5. Bloco de totais com exibição de Desconto quando houver
+  // 5. Bloco de totais
   const blocoTotaisHtml = `
     <div style="margin-top: 14px; border-top: 1px solid #0f172a; padding-top: 8px;">
       <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #475569;">
@@ -69,7 +73,8 @@ export const gerarComprovanteVenda = (venda) => {
     </div>
   `
 
-  // Conteúdo HTML completo do cupom
+  const enderecoCompleto = [empresa.endereco, empresa.cidadeUf].filter(Boolean).join(' - ')
+
   const htmlConteudo = `
     <!DOCTYPE html>
     <html lang="pt-BR">
@@ -81,7 +86,7 @@ export const gerarComprovanteVenda = (venda) => {
           body { background: #ffffff; padding: 20px; color: #0f172a; }
           .cupom { width: 100%; max-width: 320px; margin: 0 auto; }
           .header { text-align: center; border-bottom: 1px dashed #94a3b8; padding-bottom: 12px; margin-bottom: 12px; }
-          .title { font-size: 16px; font-weight: 800; letter-spacing: 0.02em; }
+          .title { font-size: 16px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
           .sub { font-size: 11px; color: #64748b; margin-top: 3px; }
           .meta { font-size: 11px; color: #334155; margin-bottom: 12px; }
           .meta div { margin-bottom: 2px; }
@@ -96,10 +101,11 @@ export const gerarComprovanteVenda = (venda) => {
       <body>
         <div class="cupom">
           <div class="header">
-            <div class="title">${DADOS_EMPRESA.nome}</div>
-            <div class="sub">${DADOS_EMPRESA.documento}</div>
-            <div class="sub">${DADOS_EMPRESA.endereco}</div>
-            <div class="sub">${DADOS_EMPRESA.telefone}</div>
+            <div class="title">${empresa.nome}</div>
+            ${empresa.documento ? `<div class="sub">${empresa.documento}</div>` : ''}
+            ${enderecoCompleto ? `<div class="sub">${enderecoCompleto}</div>` : ''}
+            ${empresa.telefone ? `<div class="sub">Tel/WhatsApp: ${empresa.telefone}</div>` : ''}
+            ${empresa.instagram ? `<div class="sub">Instagram: ${empresa.instagram}</div>` : ''}
           </div>
 
           <div class="meta">
@@ -116,7 +122,7 @@ export const gerarComprovanteVenda = (venda) => {
           ${blocoTotaisHtml}
 
           <div class="footer">
-            <p>Obrigado pela preferência!</p>
+            <p>${empresa.mensagemCupom || 'Obrigado pela preferência!'}</p>
             <p style="margin-top: 4px; font-size: 10px;">Conserve este comprovante</p>
           </div>
         </div>
@@ -129,7 +135,6 @@ export const gerarComprovanteVenda = (venda) => {
     </html>
   `
 
-  // 6. Abre em NOVA ABA real usando Blob URL (evita pop-up blockers e não substitui a tela do PDV)
   const blob = new Blob([htmlConteudo], { type: 'text/html;charset=utf-8' })
   const urlBlob = URL.createObjectURL(blob)
 
