@@ -27,24 +27,6 @@ const IconTrash = () => (
   </svg>
 )
 
-const IconFileText = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" />
-  </svg>
-)
-
-const IconWhatsApp = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-  </svg>
-)
-
-const IconEdit = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-  </svg>
-)
-
 const IconCheck = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12" />
@@ -53,7 +35,7 @@ const IconCheck = () => (
 
 const IconReceipt = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
 
@@ -73,7 +55,6 @@ const IconCamera = () => (
 export default function Vendas() {
   const [produtos, setProdutos] = useState([])
   const [clientes, setClientes] = useState([])
-  const [vendas, setVendas] = useState([])
   const [taxaCashback, setTaxaCashback] = useState(5)
   
   const [clienteSelecionado, setClienteSelecionado] = useState('')
@@ -88,7 +69,7 @@ export default function Vendas() {
   const [mostrarDropdownBusca, setMostrarDropdownBusca] = useState(false)
   const dropdownRef = useRef(null)
 
-  // Câmera / Leitor de código de barras
+  // Câmera / Leitor
   const [modalCameraAberto, setModalCameraAberto] = useState(false)
   const [html5QrCodeScanner, setHtml5QrCodeScanner] = useState(null)
 
@@ -97,10 +78,7 @@ export default function Vendas() {
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  const [vendaEditando, setVendaEditando] = useState(null)
-  const [itensOriginais, setItensOriginais] = useState([])
-
-  // Modal Caixa
+  // Modal Fechamento Caixa
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [vendasDoDia, setVendasDoDia] = useState([])
   const [carregandoCaixa, setCarregandoCaixa] = useState(false)
@@ -108,12 +86,10 @@ export default function Vendas() {
   const carregarDados = async () => {
     const { data: prodData } = await supabase.from('produtos').select('*').order('nome')
     const { data: cliData } = await supabase.from('clientes').select('*').order('nome')
-    const { data: venData } = await supabase.from('vendas').select('*, clientes(nome, telefone, saldo_cashback)').order('id', { ascending: false }).limit(10)
     const { data: cfgData } = await supabase.from('configuracoes').select('valor').eq('chave', 'cashback_percentual').maybeSingle()
 
     if (prodData) setProdutos(prodData)
     if (cliData) setClientes(cliData)
-    if (venData) setVendas(venData)
     if (cfgData) setTaxaCashback(parseFloat(cfgData.valor) || 0)
   }
 
@@ -121,7 +97,6 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
-  // Fecha dropdown de busca ao clicar fora
   useEffect(() => {
     const handleClickFora = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -132,7 +107,6 @@ export default function Vendas() {
     return () => document.removeEventListener('mousedown', handleClickFora)
   }, [])
 
-  // Produtos filtrados na busca inteligente
   const produtosFiltradosBusca = produtos.filter(p => {
     if (!termoBuscaProduto) return true
     const t = termoBuscaProduto.toLowerCase()
@@ -145,21 +119,16 @@ export default function Vendas() {
     setMostrarDropdownBusca(false)
   }
 
-  // Adiciona produto diretamente por objeto (usado também pelo scanner de código de barras)
   const adicionarItemAoPedido = (produto, qtdParam = 1) => {
     if (!produto) return
-
     const qtd = parseInt(qtdParam)
     if (qtd <= 0) return
 
     const itemExistente = itensVenda.find(i => i.produtoId === produto.id)
     const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
 
-    const itemOriginal = itensOriginais.find(i => i.produtoId === produto.id)
-    const estoqueDisponivelReal = produto.estoque + (itemOriginal ? itemOriginal.quantidade : 0)
-
-    if (estoqueDisponivelReal < qtdTotalPretendida) {
-      alert(`Estoque insuficiente de "${produto.nome}"! Disponível: ${estoqueDisponivelReal} un.`)
+    if (produto.estoque < qtdTotalPretendida) {
+      alert(`Estoque insuficiente de "${produto.nome}"! Disponível: ${produto.estoque} un.`)
       return
     }
 
@@ -187,33 +156,27 @@ export default function Vendas() {
     setQuantidade('1')
   }
 
-  // Trata digitação de leitor USB comum ou Enter no campo
   const handleKeyDownBusca = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      // Verifica se o texto bate exatamente com o código de barras
       const porCodigo = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === termoBuscaProduto.trim())
       if (porCodigo) {
         adicionarItemAoPedido(porCodigo, quantidade)
         return
       }
-
       if (produtoSelecionadoObj) {
         adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
         return
       }
-
       if (produtosFiltradosBusca.length === 1) {
         adicionarItemAoPedido(produtosFiltradosBusca[0], quantidade)
       }
     }
   }
 
-  // CARREGAR E INICIAR SCANNER DE CÂMERA DO CELULAR VIA CDN
+  // Câmera
   const abrirScannerCamera = async () => {
     setModalCameraAberto(true)
-
-    // Injeta script html5-qrcode de forma limpa e assíncrona
     if (!window.Html5Qrcode) {
       const script = document.createElement('script')
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
@@ -228,31 +191,28 @@ export default function Vendas() {
     try {
       const html5QrCode = new window.Html5Qrcode("reader-camera")
       setHtml5QrCodeScanner(html5QrCode)
-
       const config = { fps: 10, qrbox: { width: 250, height: 160 } }
       html5QrCode.start(
-        { facingMode: "environment" }, // Câmera traseira do celular
+        { facingMode: "environment" },
         config,
         (decodedText) => {
-          // Bipou código com sucesso!
           if (navigator.vibrate) navigator.vibrate(100)
-
           const prod = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === decodedText.trim())
           if (prod) {
             adicionarItemAoPedido(prod, 1)
             fecharScannerCamera(html5QrCode)
-            alert(`✅ ${prod.nome} bipado e adicionado ao pedido!`)
+            alert(`✅ ${prod.nome} adicionado ao pedido!`)
           } else {
-            alert(`Código lido: "${decodedText}", mas nenhum produto foi cadastrado com esse código.`)
+            alert(`Código "${decodedText}" não cadastrado.`)
           }
         },
-        () => {} // Erros de frame ignorados silenciosamente
+        () => {}
       ).catch(err => {
-        alert('Não foi possível acessar a câmera: ' + err)
+        alert('Erro de câmera: ' + err)
         setModalCameraAberto(false)
       })
     } catch (err) {
-      alert('Erro ao inicializar câmera: ' + err.message)
+      alert('Erro: ' + err.message)
       setModalCameraAberto(false)
     }
   }
@@ -260,16 +220,41 @@ export default function Vendas() {
   const fecharScannerCamera = (instanciaScanner = html5QrCodeScanner) => {
     if (instanciaScanner) {
       try {
-        instanciaScanner.stop().then(() => {
-          instanciaScanner.clear()
-        }).catch(() => {})
+        instanciaScanner.stop().then(() => instanciaScanner.clear()).catch(() => {})
       } catch (e) {}
     }
     setModalCameraAberto(false)
     setHtml5QrCodeScanner(null)
   }
 
-  // Cliente e Cashback
+  // Caixa Resumo do Dia
+  const abrirFechamentoCaixa = async () => {
+    setCarregandoCaixa(true)
+    setModalCaixaAberto(true)
+    const hoje = new Date()
+    hoje.setHours(0, 0, 0, 0)
+    const { data } = await supabase
+      .from('vendas')
+      .select('*, clientes(nome)')
+      .gte('created_at', hoje.toISOString())
+      .order('created_at', { ascending: true })
+
+    if (data) setVendasDoDia(data)
+    setCarregandoCaixa(false)
+  }
+
+  const resumoTotais = vendasDoDia.reduce((acc, v) => {
+    const total = Number(v.total || 0)
+    acc.totalGeral += total
+    acc.qtdPedidos += 1
+    if (v.forma_pagamento === 'dinheiro') acc.dinheiro += total
+    else if (v.forma_pagamento === 'pix') acc.pix += total
+    else if (v.forma_pagamento === 'debito') acc.debito += total
+    else if (v.forma_pagamento === 'credito') acc.credito += total
+    else if (v.forma_pagamento === 'crediario') acc.crediario += total
+    return acc
+  }, { totalGeral: 0, qtdPedidos: 0, dinheiro: 0, pix: 0, debito: 0, credito: 0, crediario: 0 })
+
   const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
   const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
 
@@ -290,12 +275,8 @@ export default function Vendas() {
         const produto = produtos.find(p => p.id === item.produtoId)
         const novaQtd = item.quantidade + delta
         if (novaQtd <= 0) return null
-
-        const itemOriginal = itensOriginais.find(i => i.produtoId === item.produtoId)
-        const estoqueDisponivelReal = (produto ? produto.estoque : 0) + (itemOriginal ? itemOriginal.quantidade : 0)
-
-        if (delta > 0 && novaQtd > estoqueDisponivelReal) {
-          alert(`Estoque máximo atingido (${estoqueDisponivelReal} un)!`)
+        if (delta > 0 && novaQtd > (produto?.estoque || 0)) {
+          alert(`Estoque máximo atingido (${produto?.estoque} un)!`)
           return item
         }
         return { ...item, quantidade: novaQtd, subtotal: novaQtd * item.preco }
@@ -308,151 +289,70 @@ export default function Vendas() {
     setItensVenda(itensVenda.filter(item => item.id !== id))
   }
 
-  const iniciarEdicao = (venda) => {
-    setVendaEditando(venda)
-    setClienteSelecionado(venda.cliente_id ? String(venda.cliente_id) : '')
-    setFormaPagamento(venda.forma_pagamento || 'dinheiro')
-    
-    const itensClonados = Array.isArray(venda.itens) ? JSON.parse(JSON.stringify(venda.itens)) : []
-    setItensVenda(itensClonados)
-    setItensOriginais(itensClonados)
-    
-    const somaItens = itensClonados.reduce((s, i) => s + (Number(i.subtotal) || 0), 0)
-    const descOriginal = Math.max(0, somaItens - Number(venda.total || 0))
-    setDesconto(descOriginal)
-    setUsarCashback(false)
-
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const cancelarEdicao = () => {
-    setVendaEditando(null)
-    setItensOriginais([])
-    setItensVenda([])
-    setClienteSelecionado('')
-    setFormaPagamento('dinheiro')
-    setValorEntrada('')
-    setDesconto(0)
-    setUsarCashback(false)
-    setValorRecebido('')
-  }
-
-  const enviarComprovanteWhatsApp = (codigoVenda, nomeCli, telCli, totalVenda, novoSaldoCli, cashbackGanho) => {
-    if (!telCli) return alert('Cliente não possui telefone!')
-    const numLimpo = telCli.replace(/\D/g, '')
-    const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
-
-    let txtCashback = ''
-    if (cashbackGanho > 0) {
-      txtCashback = `\n🎁 *Você ganhou R$ ${cashbackGanho.toFixed(2)} de Cashback!*\nSaldo acumulado: *R$ ${novoSaldoCli.toFixed(2)}* para a próxima compra.\n`
-    }
-
-    const mensagem = encodeURIComponent(
-      `Olá, ${nomeCli}!\n` +
-      `Obrigado por comprar conosco no *${DADOS_EMPRESA.nome}*!\n\n` +
-      `Pedido: *${codigoVenda}*\n` +
-      `Total: *R$ ${Number(totalVenda).toFixed(2)}*\n` +
-      txtCashback +
-      `\nQualquer dúvida, conte conosco!`
-    )
-    window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
-  }
-
   const finalizarVenda = async () => {
-    if (itensVenda.length === 0) return alert('Adicione itens à venda.')
+    if (itensVenda.length === 0) return alert('Adicione produtos à venda.')
     if (formaPagamento === 'crediario' && !clienteSelecionado) return alert('Selecione um cliente para venda a prazo.')
     if (formaPagamento === 'crediario' && numValorEntrada > totalComDesconto) return alert('Entrada maior que o total da venda!')
 
     setSalvando(true)
     const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
     const nomeCliente = clienteAtual ? clienteAtual.nome : 'Cliente Avulso'
-    const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
 
     try {
-      if (vendaEditando) {
-        const mapaOriginal = {}
-        itensOriginais.forEach(i => { mapaOriginal[i.produtoId] = (mapaOriginal[i.produtoId] || 0) + i.quantidade })
-        const mapaNovo = {}
-        itensVenda.forEach(i => { mapaNovo[i.produtoId] = (mapaNovo[i.produtoId] || 0) + i.quantidade })
+      const { data: vendaCriada, error: erroVenda } = await supabase
+        .from('vendas')
+        .insert([{ total: totalComDesconto, forma_pagamento: formaPagamento, itens: itensVenda, cliente_id: clienteId }])
+        .select()
+        .single()
 
-        const todosProdutoIds = Array.from(new Set([...Object.keys(mapaOriginal), ...Object.keys(mapaNovo)]))
-        for (const prodIdStr of todosProdutoIds) {
-          const prodId = parseInt(prodIdStr)
-          const diferenca = (mapaNovo[prodId] || 0) - (mapaOriginal[prodId] || 0)
-          if (diferenca !== 0) {
-            const prodAtual = produtos.find(p => p.id === prodId)
-            if (prodAtual) {
-              await supabase.from('produtos').update({ estoque: Math.max(0, (prodAtual.estoque || 0) - diferenca) }).eq('id', prodId)
-            }
-          }
-        }
+      if (erroVenda) throw erroVenda
 
-        const { error: erroUpdate } = await supabase
-          .from('vendas')
-          .update({ total: totalComDesconto, forma_pagamento: formaPagamento, itens: itensVenda, cliente_id: clienteId })
-          .eq('id', vendaEditando.id)
-
-        if (erroUpdate) throw erroUpdate
-        alert('Venda atualizada com sucesso!')
-        cancelarEdicao()
-
-      } else {
-        const { data: vendaCriada, error: erroVenda } = await supabase
-          .from('vendas')
-          .insert([{ total: totalComDesconto, forma_pagamento: formaPagamento, itens: itensVenda, cliente_id: clienteId }])
-          .select()
-          .single()
-
-        if (erroVenda) throw erroVenda
-
-        let saldoFinalCliente = saldoCashbackDisponivel
-        if (clienteId) {
-          if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
-          saldoFinalCliente += novoCashbackGerado
-
-          await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
-        }
-
-        if (formaPagamento === 'crediario') {
-          const dataVencimento = new Date()
-          dataVencimento.setDate(dataVencimento.getDate() + 30)
-
-          await supabase.from('contas_a_receber').insert([{
-            descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
-            valor: totalComDesconto,
-            valor_pago: numValorEntrada,
-            vencimento: dataVencimento.toISOString().split('T')[0],
-            status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
-            cliente_id: clienteId
-          }])
-        }
-
-        for (const item of itensVenda) {
-          const prodOriginal = produtos.find(p => p.id === item.produtoId)
-          if (prodOriginal) {
-            await supabase.from('produtos').update({ estoque: Math.max(0, (prodOriginal.estoque || 0) - item.quantidade) }).eq('id', item.produtoId)
-          }
-        }
-
-        const codFormatado = formatarIdVenda(vendaCriada.id)
-        if (confirm(`Venda ${codFormatado} finalizada! Imprimir comprovante PDF?`)) {
-          gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } })
-        }
-
-        if (telefoneCliente && confirm('Enviar confirmação por WhatsApp com saldo de Cashback?')) {
-          enviarComprovanteWhatsApp(codFormatado, nomeCliente, telefoneCliente, totalComDesconto, saldoFinalCliente, novoCashbackGerado)
-        }
-
-        setItensVenda([])
-        setClienteSelecionado('')
-        setFormaPagamento('dinheiro')
-        setValorEntrada('')
-        setDesconto(0)
-        setUsarCashback(false)
-        setValorRecebido('')
+      // Saldo Cashback
+      let saldoFinalCliente = saldoCashbackDisponivel
+      if (clienteId) {
+        if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
+        saldoFinalCliente += novoCashbackGerado
+        await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
       }
+
+      // Crediário
+      if (formaPagamento === 'crediario') {
+        const dataVencimento = new Date()
+        dataVencimento.setDate(dataVencimento.getDate() + 30)
+
+        await supabase.from('contas_a_receber').insert([{
+          descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
+          valor: totalComDesconto,
+          valor_pago: numValorEntrada,
+          vencimento: dataVencimento.toISOString().split('T')[0],
+          status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
+          cliente_id: clienteId
+        }])
+      }
+
+      // Baixa estoque
+      for (const item of itensVenda) {
+        const prodOriginal = produtos.find(p => p.id === item.produtoId)
+        if (prodOriginal) {
+          await supabase.from('produtos').update({ estoque: Math.max(0, (prodOriginal.estoque || 0) - item.quantidade) }).eq('id', item.produtoId)
+        }
+      }
+
+      const codFormatado = formatarIdVenda(vendaCriada.id)
+      if (confirm(`Venda #${codFormatado} finalizada com sucesso!\nAbrir comprovante PDF agora?`)) {
+        gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } })
+      }
+
+      // Limpa para a próxima venda
+      setItensVenda([])
+      setClienteSelecionado('')
+      setFormaPagamento('dinheiro')
+      setValorEntrada('')
+      setDesconto(0)
+      setUsarCashback(false)
+      setValorRecebido('')
     } catch (err) {
-      alert('Erro: ' + err.message)
+      alert('Erro ao gravar venda: ' + err.message)
     }
 
     setSalvando(false)
@@ -466,6 +366,7 @@ export default function Vendas() {
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 13px; margin: 4px 0 0 0; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+        
         .form-container, .table-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
         .form-section h2, .table-container h2 { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
         .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
@@ -474,7 +375,6 @@ export default function Vendas() {
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
 
-        /* Dropdown inteligente de busca */
         .busca-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 260px; overflow-y: auto; z-index: 50; }
         .busca-item { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .busca-item:hover { background: #eff6ff; }
@@ -489,6 +389,8 @@ export default function Vendas() {
         .btn-secondary { background: #f1f5f9; color: #475569; }
         .btn-camera { background: #0f172a; color: #ffffff; border-radius: 10px; height: 42px; padding: 0 1rem; gap: 6px; white-space: nowrap; }
         .btn-camera:hover { background: #1e293b; }
+        .btn-outline-dark { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
+        .btn-outline-dark:hover { background: #f8fafc; }
         .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
         .btn-lg { padding: 0.85rem 1.75rem; font-size: 1.05rem; }
 
@@ -500,21 +402,38 @@ export default function Vendas() {
         .total-value { font-size: 1.85rem; font-weight: 800; color: #2563eb; }
         .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
 
-        /* Modal Câmera / Leitor */
         .modal-camera-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); display: flex; align-items: center; justify-content: center; z-index: 120; padding: 1rem; }
         .modal-camera-box { background: #ffffff; width: 100%; max-width: 440px; border-radius: 18px; padding: 1.5rem; text-align: center; }
         #reader-camera { width: 100%; border-radius: 12px; overflow: hidden; }
 
+        /* Modal Fechamento */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
+        .modal-sheet { background: #ffffff; width: 100%; max-width: 580px; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+        .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
+        .modal-heading { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
+        .modal-sub { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
+        .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.25rem; }
+        .kpi-mini { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
+        .kpi-mini-title { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .kpi-mini-val { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
+        .caixa-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 6px; font-size: 0.9rem; }
+        .caixa-gaveta { background: #ecfdf5; border: 1px solid #a7f3d0; }
+
         @media (max-width: 768px) {
           .form-row { flex-direction: column; gap: 0.75rem; }
+          .kpi-row { grid-template-columns: 1fr; }
         }
       `}</style>
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">{vendaEditando ? `Editando Venda #${formatarIdVenda(vendaEditando.id)}` : 'Frente de Caixa (PDV)'}</h1>
+          <h1 className="page-title">Frente de Caixa (PDV)</h1>
           <p className="page-subtitle"><IconStore /> {DADOS_EMPRESA.nome}</p>
         </div>
+
+        <button className="btn btn-outline-dark" onClick={abrirFechamentoCaixa} style={{ gap: '8px' }}>
+          <IconReceipt /> Resumo do Dia (Caixa)
+        </button>
       </div>
 
       <div className="form-container">
@@ -578,7 +497,6 @@ export default function Vendas() {
           )}
         </div>
 
-        {/* BUSCA RÁPIDA + CÂMERA DO CELULAR */}
         <div className="form-section">
           <h2>Adicionar Produtos</h2>
           <div className="form-row">
@@ -614,13 +532,12 @@ export default function Vendas() {
               )}
             </div>
 
-            {/* BOTÃO DA CÂMERA DO CELULAR */}
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button 
                 type="button" 
                 className="btn btn-camera" 
                 onClick={abrirScannerCamera}
-                title="Bipar código com a câmera do celular"
+                title="Bipar com a câmera do celular"
               >
                 <IconCamera /> Bipar com Câmera
               </button>
@@ -644,7 +561,7 @@ export default function Vendas() {
                 const exato = produtos.find(p => p.nome.toLowerCase() === termoBuscaProduto.toLowerCase() || (p.codigo_barras && p.codigo_barras === termoBuscaProduto))
                 if (exato) return adicionarItemAoPedido(exato, quantidade)
               }
-              if (!produtoSelecionadoObj) return alert('Selecione um produto na lista ou bipe o código.')
+              if (!produtoSelecionadoObj) return alert('Selecione um produto ou bipe o código.')
               adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
             }} 
             style={{ gap: '6px' }}
@@ -708,6 +625,27 @@ export default function Vendas() {
                   <strong style={{ fontSize: '1.1rem', color: '#16a34a' }}>+ R$ {novoCashbackGerado.toFixed(2)}</strong>
                 </div>
               )}
+
+              {formaPagamento === 'dinheiro' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>VALOR RECEBIDO (R$):</label>
+                  <input type="number" step="0.01" placeholder="0,00" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} style={{ width: '140px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                </div>
+              )}
+
+              {formaPagamento === 'dinheiro' && troco > 0 && (
+                <div style={{ background: '#ecfdf5', padding: '8px 16px', borderRadius: '10px', border: '1px solid #10b981' }}>
+                  <span style={{ fontSize: '11px', color: '#047857', display: 'block', fontWeight: 600 }}>TROCO A DEVOLVER:</span>
+                  <strong style={{ fontSize: '1.25rem', color: '#047857' }}>R$ {troco.toFixed(2)}</strong>
+                </div>
+              )}
+
+              {formaPagamento === 'crediario' && (
+                <div style={{ background: '#fffbeb', padding: '8px 16px', borderRadius: '10px', border: '1px solid #f59e0b' }}>
+                  <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 600 }}>RESTANTE A COBRAR:</span>
+                  <strong style={{ fontSize: '1.2rem', color: '#92400e' }}>R$ {saldoRestanteCrediario.toFixed(2)}</strong>
+                </div>
+              )}
             </div>
 
             <div className="total-section" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
@@ -716,14 +654,14 @@ export default function Vendas() {
                 <span className="total-value">R$ {totalComDesconto.toFixed(2)}</span>
               </div>
               <button className="btn btn-success btn-lg" onClick={finalizarVenda} disabled={salvando} style={{ gap: '8px' }}>
-                <IconCheck /> {salvando ? 'Processando...' : (vendaEditando ? 'Salvar Alterações' : 'Finalizar Venda')}
+                <IconCheck /> {salvando ? 'Processando...' : 'Finalizar Venda'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL SCANNER DE CÂMERA DO CELULAR */}
+      {/* Modal Câmera */}
       {modalCameraAberto && (
         <div className="modal-camera-overlay">
           <div className="modal-camera-box">
@@ -733,6 +671,73 @@ export default function Vendas() {
             <button className="btn btn-secondary" onClick={() => fecharScannerCamera()} style={{ marginTop: '1rem', width: '100%' }}>
               ✕ Fechar Leitor
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Caixa */}
+      {modalCaixaAberto && (
+        <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-top">
+              <div>
+                <h3 className="modal-heading">Fechamento do Dia</h3>
+                <p className="modal-sub">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
+              </div>
+              <button onClick={() => setModalCaixaAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+            </div>
+
+            {carregandoCaixa ? (
+              <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>Calculando vendas de hoje...</p>
+            ) : (
+              <>
+                <div className="kpi-row">
+                  <div className="kpi-mini">
+                    <span className="kpi-mini-title">Total Faturado Hoje</span>
+                    <span className="kpi-mini-val" style={{ color: '#2563eb' }}>R$ {resumoTotais.totalGeral.toFixed(2)}</span>
+                  </div>
+                  <div className="kpi-mini">
+                    <span className="kpi-mini-title">Vendas Concluídas</span>
+                    <span className="kpi-mini-val">{resumoTotais.qtdPedidos} pedidos</span>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div className="caixa-item caixa-gaveta">
+                    <div>
+                      <strong style={{ color: '#047857', display: 'block' }}>💵 Dinheiro em Gaveta</strong>
+                      <span style={{ fontSize: '0.75rem', color: '#065f46' }}>Saldo físico em espécie</span>
+                    </div>
+                    <strong style={{ color: '#047857', fontSize: '1.1rem' }}>R$ {resumoTotais.dinheiro.toFixed(2)}</strong>
+                  </div>
+                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <span>⚡ PIX</span>
+                    <strong>R$ {resumoTotais.pix.toFixed(2)}</strong>
+                  </div>
+                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <span>💳 Cartão de Débito</span>
+                    <strong>R$ {resumoTotais.debito.toFixed(2)}</strong>
+                  </div>
+                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <span>💳 Cartão de Crédito</span>
+                    <strong>R$ {resumoTotais.credito.toFixed(2)}</strong>
+                  </div>
+                  <div className="caixa-item" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
+                    <div>
+                      <strong style={{ color: '#b45309', display: 'block' }}>📝 Crediário (A Prazo)</strong>
+                      <span style={{ fontSize: '0.75rem', color: '#92400e' }}>Lançado em Contas a Receber</span>
+                    </div>
+                    <strong style={{ color: '#b45309' }}>R$ {resumoTotais.crediario.toFixed(2)}</strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
+                  <button className="btn btn-primary" onClick={() => setModalCaixaAberto(false)}>
+                    Fechar Conferência
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
