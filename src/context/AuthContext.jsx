@@ -8,53 +8,30 @@ export function AuthProvider({ children }) {
     const salvo = localStorage.getItem('tecco_operador')
     return salvo ? JSON.parse(salvo) : null
   })
-  const [modalLoginAberto, setModalLoginAberto] = useState(false)
-  const [usuariosDisponiveis, setUsuariosDisponiveis] = useState([])
   const [loadingAuth, setLoadingAuth] = useState(false)
 
-  // Carrega operadores ativos do banco
-  const carregarUsuarios = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('usuarios_loja')
-        .select('id, nome, perfil, ativo')
-        .eq('ativo', true)
-        .order('nome')
-
-      if (error) throw error
-      if (data) setUsuariosDisponiveis(data)
-    } catch (err) {
-      console.error('Erro ao listar operadores:', err)
-    }
-  }
-
-  useEffect(() => {
-    carregarUsuarios()
-    // Se não tiver ninguém logado, abre a tela de login
-    if (!operador) {
-      setModalLoginAberto(true)
-    }
-  }, [])
-
-  // Validação do PIN no Supabase
-  const autenticar = async (usuarioId, pinDigitado) => {
+  // Autenticação tradicional: Login + Senha
+  const autenticar = async (usuarioDigitado, senhaDigitada) => {
     setLoadingAuth(true)
     try {
+      const loginLimpo = usuarioDigitado.trim().toLowerCase()
+      const senhaLimpa = senhaDigitada.trim()
+
       const { data, error } = await supabase
         .from('usuarios_loja')
-        .select('id, nome, perfil, pin, ativo')
-        .eq('id', usuarioId)
+        .select('id, nome, login, pin, perfil, ativo')
+        .or(`login.ilike.${loginLimpo},nome.ilike.${loginLimpo}`)
         .eq('ativo', true)
-        .single()
+        .maybeSingle()
 
       if (error || !data) {
-        alert('Operador não encontrado ou inativo.')
+        alert('Usuário não encontrado ou inativo no sistema.')
         setLoadingAuth(false)
         return false
       }
 
-      if (String(data.pin).trim() !== String(pinDigitado).trim()) {
-        alert('PIN incorreto. Verifique e tente novamente.')
+      if (String(data.pin).trim() !== senhaLimpa) {
+        alert('Senha incorreta. Verifique e tente novamente.')
         setLoadingAuth(false)
         return false
       }
@@ -62,16 +39,16 @@ export function AuthProvider({ children }) {
       const dadosSessao = {
         id: data.id,
         nome: data.nome,
+        login: data.login || loginLimpo,
         perfil: data.perfil // 'admin' ou 'vendedor'
       }
 
       setOperador(dadosSessao)
       localStorage.setItem('tecco_operador', JSON.stringify(dadosSessao))
-      setModalLoginAberto(false)
       setLoadingAuth(false)
       return true
     } catch (err) {
-      alert('Erro na autenticação: ' + err.message)
+      alert('Erro ao realizar login: ' + err.message)
       setLoadingAuth(false)
       return false
     }
@@ -80,7 +57,6 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('tecco_operador')
     setOperador(null)
-    setModalLoginAberto(true)
   }
 
   return (
@@ -88,10 +64,6 @@ export function AuthProvider({ children }) {
       value={{
         operador,
         isAdmin: operador?.perfil === 'admin',
-        modalLoginAberto,
-        setModalLoginAberto,
-        usuariosDisponiveis,
-        carregarUsuarios,
         autenticar,
         logout,
         loadingAuth
