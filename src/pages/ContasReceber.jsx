@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 // Ícones SVG minimalistas nativos
+const IconPlus = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14" /><path d="M12 5v14" />
+  </svg>
+)
+
 const IconCheck = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12" />
@@ -35,6 +41,7 @@ const IconEdit = () => (
 
 export default function ContasReceber() {
   const [contas, setContas] = useState([])
+  const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
   
@@ -44,9 +51,27 @@ export default function ContasReceber() {
   const [valorReceberInput, setValorReceberInput] = useState('')
   const [salvandoRecebimento, setSalvandoRecebimento] = useState(false)
 
-  const carregarContas = async () => {
+  // Modal Novo Título Manual (Dívidas Antigas)
+  const [modalNovoTitulo, setModalNovoTitulo] = useState(false)
+  const [novoClienteId, setNovoClienteId] = useState('')
+  const [novaDescricao, setNovaDescricao] = useState('')
+  const [novoValorTotal, setNovoValorTotal] = useState('')
+  const [novoValorPago, setNovoValorPago] = useState('')
+  const [novoVencimento, setNovoVencimento] = useState('')
+  const [salvandoNovoTitulo, setSalvandoNovoTitulo] = useState(false)
+
+  const carregarDados = async () => {
     setLoading(true)
     try {
+      // Carrega clientes para o formulário
+      const { data: cliData } = await supabase
+        .from('clientes')
+        .select('id, nome, telefone')
+        .order('nome', { ascending: true })
+
+      if (cliData) setClientes(cliData)
+
+      // Carrega contas a receber
       let query = supabase
         .from('contas_a_receber')
         .select('*, clientes(nome, telefone)')
@@ -73,10 +98,10 @@ export default function ContasReceber() {
   }
 
   useEffect(() => {
-    carregarContas()
+    carregarDados()
   }, [filtro])
 
-  // Abre modal de recebimento com saldo restante pré-preenchido
+  // Abre modal de recebimento
   const abrirModalRecebimento = (conta) => {
     const total = Number(conta.valor || 0)
     const pago = Number(conta.valor_pago || 0)
@@ -85,7 +110,7 @@ export default function ContasReceber() {
     setValorReceberInput(restante.toFixed(2))
   }
 
-  // Executa a baixa com tratamento seguro para dados legados
+  // Baixa de pagamento
   const confirmarRecebimento = async () => {
     if (!contaModalReceber) return
 
@@ -134,7 +159,7 @@ export default function ContasReceber() {
       alert(novoStatus === 'pago' ? 'Conta liquidada com sucesso!' : 'Pagamento parcial registrado!')
       setContaModalReceber(null)
       setValorReceberInput('')
-      await carregarContas()
+      await carregarDados()
     } catch (err) {
       alert('Falha ao registrar pagamento: ' + err.message)
     }
@@ -142,6 +167,73 @@ export default function ContasReceber() {
     setSalvandoRecebimento(false)
   }
 
+  // Criar Título Manual para Dívidas Antigas
+  const salvarNovoTituloManual = async (e) => {
+    e.preventDefault()
+
+    if (!novoClienteId) {
+      alert('Selecione o cliente devedor.')
+      return
+    }
+
+    const valTotal = parseFloat(String(novoValorTotal).replace(',', '.'))
+    if (isNaN(valTotal) || valTotal <= 0) {
+      alert('Informe um valor total válido.')
+      return
+    }
+
+    const valPago = novoValorPago ? parseFloat(String(novoValorPago).replace(',', '.')) : 0
+    if (isNaN(valPago) || valPago < 0 || valPago > valTotal) {
+      alert('O valor já pago não pode ser negativo nem maior que o valor total.')
+      return
+    }
+
+    setSalvandoNovoTitulo(true)
+
+    const historicoInicial = []
+    if (valPago > 0) {
+      historicoInicial.push({
+        id: Date.now(),
+        data: new Date().toISOString(),
+        valor: valPago
+      })
+    }
+
+    const statusInicial = valPago >= valTotal ? 'pago' : 'pendente'
+
+    try {
+      const { error } = await supabase
+        .from('contas_a_receber')
+        .insert([
+          {
+            cliente_id: parseInt(novoClienteId),
+            descricao: novaDescricao.trim() || 'Saldo Devedor / Venda Antiga',
+            valor: valTotal,
+            valor_pago: valPago,
+            vencimento: novoVencimento || null,
+            status: statusInicial,
+            historico_pagamentos: historicoInicial
+          }
+        ])
+
+      if (error) throw error
+
+      alert('Dívida antiga lançada com sucesso!')
+      setModalNovoTitulo(false)
+      setNovoClienteId('')
+      setNovaDescricao('')
+      setNovoValorTotal('')
+      setNovoValorPago('')
+      setNovoVencimento('')
+      await carregarDados()
+    } catch (err) {
+      alert('Erro ao criar título: ' + err.message)
+    }
+
+    setSalvandoNovoTitulo(false)
+  }
+
+  // Editar valor de um pagamento específico do histórico
   const editarPagamentoHistorico = async (itemHistorico) => {
     const novoValorStr = prompt(
       `Corrigir pagamento do dia ${new Date(itemHistorico.data).toLocaleDateString('pt-BR')}:\nInforme o valor correto:`,
@@ -175,12 +267,13 @@ export default function ContasReceber() {
       .eq('id', contaModalHist.id)
 
     if (!error) {
-      await carregarContas()
+      await carregarDados()
     } else {
       alert('Erro ao salvar alteração: ' + error.message)
     }
   }
 
+  // Excluir um lançamento do histórico
   const excluirPagamentoHistorico = async (idHistorico) => {
     if (!confirm('Deseja realmente remover esse registro de pagamento? O saldo será recalculado.')) return
 
@@ -200,7 +293,7 @@ export default function ContasReceber() {
       .eq('id', contaModalHist.id)
 
     if (!error) {
-      await carregarContas()
+      await carregarDados()
     } else {
       alert('Erro ao remover: ' + error.message)
     }
@@ -217,25 +310,16 @@ export default function ContasReceber() {
         .cr-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
         .cr-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .cr-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
-        .summary-card { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 1rem 1.5rem; display: flex; flex-direction: column; min-width: 220px; }
-        .summary-card span { font-size: 0.72rem; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.05em; }
-        .summary-card strong { font-size: 1.6rem; font-weight: 800; color: #c2410c; letter-spacing: -0.02em; }
+        .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .summary-card { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 0.85rem 1.25rem; display: flex; flex-direction: column; min-width: 200px; }
+        .summary-card span { font-size: 0.7rem; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.05em; }
+        .summary-card strong { font-size: 1.45rem; font-weight: 800; color: #c2410c; letter-spacing: -0.02em; }
         
         .filter-bar { display: flex; gap: 8px; margin-bottom: 1.25rem; overflow-x: auto; padding-bottom: 4px; }
         .filter-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .filter-btn.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
         
-        /* Container responsivo com rolagem horizontal livre */
-        .table-box { 
-          background: #ffffff; 
-          border: 1px solid #e2e8f0; 
-          border-radius: 16px; 
-          overflow-x: auto; 
-          -webkit-overflow-scrolling: touch;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.02); 
-          width: 100%;
-        }
-        
+        .table-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: 0 1px 3px rgba(0,0,0,0.02); width: 100%; }
         table { width: 100%; border-collapse: collapse; text-align: left; min-width: 820px; }
         th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1.25rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
         td { padding: 1rem 1.25rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; white-space: nowrap; }
@@ -243,18 +327,24 @@ export default function ContasReceber() {
         .badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
         .badge-pendente { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
         .badge-pago { background: #ecfdf5; color: #047857; border: 1px solid #d1fae5; }
+        
         .btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 0.45rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: #ffffff; white-space: nowrap; }
         .btn-action:hover { background: #1d4ed8; }
         .btn-sec { background: #f1f5f9; color: #475569; }
         .btn-sec:hover { background: #e2e8f0; color: #0f172a; }
+        .btn-primary { background: #2563eb; color: #ffffff; padding: 0.65rem 1.2rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary:hover { background: #1d4ed8; }
         
-        /* Modais Responsivos */
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
         .modal-card { background: #ffffff; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem; }
         .modal-title { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
         .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-radius: 8px; background: #f8fafc; margin-bottom: 6px; border: 1px solid #f1f5f9; gap: 8px; }
         .input-money { height: 44px; width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 6px; }
+
+        .form-group-modal { display: flex; flex-direction: column; margin-bottom: 1rem; }
+        .form-group-modal label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 5px; text-transform: uppercase; }
+        .form-group-modal input, .form-group-modal select { height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.9rem; color: #0f172a; }
 
         @media (max-width: 768px) {
           .cr-header { flex-direction: column; align-items: stretch; }
@@ -268,9 +358,15 @@ export default function ContasReceber() {
           <p className="cr-subtitle">Gestão de crediário, entradas e histórico de pagamentos</p>
         </div>
 
-        <div className="summary-card">
-          <span>Saldo Total em Aberto</span>
-          <strong>R$ {totalEmAberto.toFixed(2)}</strong>
+        <div className="header-actions">
+          <div className="summary-card">
+            <span>Saldo Total em Aberto</span>
+            <strong>R$ {totalEmAberto.toFixed(2)}</strong>
+          </div>
+
+          <button className="btn-primary" onClick={() => setModalNovoTitulo(true)}>
+            <IconPlus /> Lançar Dívida Antiga
+          </button>
         </div>
       </div>
 
@@ -369,7 +465,107 @@ export default function ContasReceber() {
         )}
       </div>
 
-      {/* MODAL 1: REGISTRAR RECEBIMENTO */}
+      {/* MODAL NOVO TÍTULO MANUAL (DÍVIDA ANTIGA) */}
+      {modalNovoTitulo && (
+        <div className="modal-overlay" onClick={() => setModalNovoTitulo(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Lançar Dívida / Saldo Antigo</h3>
+              <button 
+                onClick={() => setModalNovoTitulo(false)} 
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={salvarNovoTituloManual}>
+              <div className="form-group-modal">
+                <label>Cliente Devedor</label>
+                <select 
+                  value={novoClienteId} 
+                  onChange={e => setNovoClienteId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione o cliente...</option>
+                  {clientes.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} {c.telefone ? `(${c.telefone})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '3px' }}>
+                  Se o cliente não estiver na lista, cadastre-o na aba "Clientes".
+                </span>
+              </div>
+
+              <div className="form-group-modal">
+                <label>Descrição do Saldo / Referência</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: Saldo antigo de roupas / Caderno 2024"
+                  value={novaDescricao}
+                  onChange={e => setNovaDescricao(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="form-group-modal" style={{ flex: 1 }}>
+                  <label>Valor Total da Dívida (R$)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0,00"
+                    value={novoValorTotal}
+                    onChange={e => setNovoValorTotal(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group-modal" style={{ flex: 1 }}>
+                  <label>Já Pago no Passado (R$)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0,00"
+                    value={novoValorPago}
+                    onChange={e => setNovoValorPago(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-modal">
+                <label>Data de Vencimento / Combinada</label>
+                <input 
+                  type="date" 
+                  value={novoVencimento}
+                  onChange={e => setNovoVencimento(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1rem' }}>
+                <button 
+                  type="button" 
+                  className="btn-action btn-sec" 
+                  onClick={() => setModalNovoTitulo(false)}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-action" 
+                  disabled={salvandoNovoTitulo}
+                  style={{ background: '#2563eb', padding: '0.6rem 1.2rem' }}
+                >
+                  {salvandoNovoTitulo ? 'Salvando...' : 'Salvar Saldo Devedor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RECEBER */}
       {contaModalReceber && (
         <div className="modal-overlay" onClick={() => setContaModalReceber(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -426,7 +622,7 @@ export default function ContasReceber() {
         </div>
       )}
 
-      {/* MODAL 2: HISTÓRICO E AJUSTES DE PAGAMENTOS */}
+      {/* MODAL HISTÓRICO */}
       {contaModalHist && (
         <div className="modal-overlay" onClick={() => setContaModalHist(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
