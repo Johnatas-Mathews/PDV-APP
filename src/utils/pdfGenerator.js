@@ -69,14 +69,8 @@ export const gerarComprovanteVenda = (venda) => {
     </div>
   `
 
-  // 6. Janela de impressão direta sem travar na Vercel
-  const janela = window.open('', '_blank', 'width=380,height=600')
-  if (!janela) {
-    alert('Por favor, permita pop-ups no seu navegador para imprimir o comprovante.')
-    return
-  }
-
-  janela.document.write(`
+  // Conteúdo HTML completo do cupom
+  const htmlConteudo = `
     <!DOCTYPE html>
     <html lang="pt-BR">
       <head>
@@ -133,7 +127,14 @@ export const gerarComprovanteVenda = (venda) => {
         </script>
       </body>
     </html>
-  `)
+  `
 
-  janela.document.close()
+  // 6. Abre em NOVA ABA real usando Blob URL (evita pop-up blockers e não substitui a tela do PDV)
+  const blob = new Blob([htmlConteudo], { type: 'text/html;charset=utf-8' })
+  const urlBlob = URL.createObjectURL(blob)
+
+  const novaAba = window.open(urlBlob, '_blank')
+  if (!novaAba) {
+    alert('Por favor, permita pop-ups no seu navegador para abrir o comprovante em nova aba.')
+  }
 }
