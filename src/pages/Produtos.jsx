@@ -41,6 +41,30 @@ const IconLayers = () => (
   </svg>
 )
 
+const IconZap = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  </svg>
+)
+
+// Gerador de código EAN-13 válido (padrão 20... para uso interno de loja)
+const gerarCodigoEAN13 = () => {
+  // Prefixo '20' reservado internacionalmente para produtos internos da loja + 10 dígitos aleatórios baseados no tempo
+  const prefixo = '20'
+  const randomParte = String(Date.now()).slice(-8) + String(Math.floor(Math.random() * 90 + 10))
+  const base12 = (prefixo + randomParte).slice(0, 12)
+
+  // Cálculo matemático oficial do dígito verificador do padrão EAN-13
+  let soma = 0
+  for (let i = 0; i < 12; i++) {
+    const digito = parseInt(base12[i], 10)
+    soma += (i % 2 === 0) ? digito * 1 : digito * 3
+  }
+  const digitoVerificador = (10 - (soma % 10)) % 10
+
+  return base12 + digitoVerificador
+}
+
 export default function Produtos() {
   const [produtos, setProdutos] = useState([])
   const [variacoes, setVariacoes] = useState([])
@@ -178,7 +202,6 @@ export default function Produtos() {
       const listaAtualizada = [...variacoesDoProd, data]
       setVariacoesDoProd(listaAtualizada)
 
-      // Atualiza o estoque total do produto no banco com base na soma da grade
       const somaEstoqueGrade = listaAtualizada.reduce((s, v) => s + (v.estoque || 0), 0)
       await supabase.from('produtos').update({ estoque: somaEstoqueGrade }).eq('id', produtoGradeSel.id)
 
@@ -246,6 +269,11 @@ export default function Produtos() {
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
         
+        .input-with-action { display: flex; gap: 6px; }
+        .input-with-action input { flex: 1; }
+        .btn-gerar-code { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.78rem; font-weight: 700; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; transition: all 0.15s; }
+        .btn-gerar-code:hover { background: #e2e8f0; color: #0f172a; border-color: #94a3b8; }
+
         .chips-container { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
         .chip-cat { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; }
         .chip-cat.selected { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; font-weight: 600; }
@@ -277,7 +305,7 @@ export default function Produtos() {
 
         /* Modal Grade */
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
-        .modal-card { background: #ffffff; width: 100%; max-width: 620px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        .modal-card { background: #ffffff; width: 100%; max-width: 660px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem; }
         .modal-title { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
 
@@ -289,7 +317,7 @@ export default function Produtos() {
 
       <div className="page-header">
         <h1 className="page-title">Catálogo de Produtos</h1>
-        <p className="page-subtitle">Cadastre modelos, códigos de barras e gerencie grades de tamanhos e cores</p>
+        <p className="page-subtitle">Cadastre modelos, gere códigos de barras e gerencie grades de tamanhos e cores</p>
       </div>
 
       <div className="card-box">
@@ -307,17 +335,27 @@ export default function Produtos() {
               />
             </div>
 
-            <div className="form-group" style={{ flex: 1.2 }}>
-              <label>Código de Barras Geral (Opcional)</label>
-              <input 
-                type="text" 
-                placeholder="Ex: 7891234567890"
-                value={codigoBarras}
-                onChange={e => setCodigoBarras(e.target.value)}
-              />
+            <div className="form-group" style={{ flex: 1.4 }}>
+              <label>Código de Barras (EAN-13 / Etiqueta)</label>
+              <div className="input-with-action">
+                <input 
+                  type="text" 
+                  placeholder="Ex: 789... ou gere ao lado"
+                  value={codigoBarras}
+                  onChange={e => setCodigoBarras(e.target.value)}
+                />
+                <button 
+                  type="button" 
+                  className="btn-gerar-code"
+                  onClick={() => setCodigoBarras(gerarCodigoEAN13())}
+                  title="Gerar código de barras EAN-13 válido automaticamente"
+                >
+                  <IconZap /> Gerar
+                </button>
+              </div>
             </div>
 
-            <div className="form-group" style={{ flex: 1.5 }}>
+            <div className="form-group" style={{ flex: 1.4 }}>
               <label>Categoria</label>
               <input 
                 type="text" 
@@ -462,7 +500,6 @@ export default function Produtos() {
                         </span>
                       )}
 
-                      {/* Exibe as variações existentes */}
                       {temGrade && (
                         <div style={{ marginTop: '4px' }}>
                           {varsDesteProd.map(v => (
@@ -524,7 +561,7 @@ export default function Produtos() {
             <div className="modal-header">
               <div>
                 <h3 className="modal-title">Grade: {produtoGradeSel.nome}</h3>
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Adicione variações de tamanho, cor e estoque</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Adicione variações de tamanho, cor e gere códigos individuais</span>
               </div>
               <button onClick={() => setModalGradeAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
             </div>
@@ -538,17 +575,17 @@ export default function Produtos() {
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
-                  placeholder="Tam (Ex: P, M, 38)" 
+                  placeholder="Tam (P, M, 38)" 
                   value={novoTamanho} 
                   onChange={e => setNovoTamanho(e.target.value)}
-                  style={{ flex: 1, minWidth: '90px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
+                  style={{ flex: 1, minWidth: '85px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
                 />
                 <input 
                   type="text" 
-                  placeholder="Cor (Ex: Preto, Nude)" 
+                  placeholder="Cor (Preto, Nude)" 
                   value={novaCor} 
                   onChange={e => setNovaCor(e.target.value)}
-                  style={{ flex: 1.2, minWidth: '110px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
+                  style={{ flex: 1.2, minWidth: '100px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
                 />
                 <input 
                   type="number" 
@@ -556,16 +593,29 @@ export default function Produtos() {
                   placeholder="Qtd" 
                   value={novoEstoqueVar} 
                   onChange={e => setNovoEstoqueVar(e.target.value)}
-                  style={{ width: '70px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px', textAlign: 'center' }}
+                  style={{ width: '60px', height: '38px', padding: '0 6px', border: '1px solid #cbd5e1', borderRadius: '8px', textAlign: 'center' }}
                   required
                 />
-                <input 
-                  type="text" 
-                  placeholder="Código de Barras Específico" 
-                  value={novoBarcodeVar} 
-                  onChange={e => setNovoBarcodeVar(e.target.value)}
-                  style={{ flex: 1.5, minWidth: '140px', height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px' }}
-                />
+                
+                {/* Campo Código da Variação com Botão Gerar */}
+                <div style={{ display: 'flex', gap: '4px', flex: 2, minWidth: '180px' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Código da Etiqueta" 
+                    value={novoBarcodeVar} 
+                    onChange={e => setNovoBarcodeVar(e.target.value)}
+                    style={{ flex: 1, height: '38px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem' }}
+                  />
+                  <button 
+                    type="button" 
+                    className="btn-gerar-code"
+                    onClick={() => setNovoBarcodeVar(gerarCodigoEAN13())}
+                    title="Gerar código de barras EAN-13 para esta variação"
+                  >
+                    <IconZap /> Gerar
+                  </button>
+                </div>
+
                 <button type="submit" className="btn btn-primary" disabled={salvandoVar} style={{ height: '38px', padding: '0 12px' }}>
                   <IconPlus /> Adicionar
                 </button>
