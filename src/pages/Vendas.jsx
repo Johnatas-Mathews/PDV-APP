@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
-import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
+import { gerarComprovanteVenda, gerarTextoCupomWhatsApp, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
 // Ícones SVG minimalistas nativos
 const IconStore = () => (
@@ -35,7 +35,7 @@ const IconCheck = () => (
 
 const IconReceipt = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
 
@@ -54,8 +54,10 @@ const IconCamera = () => (
 
 export default function Vendas() {
   const [produtos, setProdutos] = useState([])
+  const [variacoes, setVariacoes] = useState([])
   const [clientes, setClientes] = useState([])
   const [taxaCashback, setTaxaCashback] = useState(5)
+  const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
   const [clienteSelecionado, setClienteSelecionado] = useState('')
   const [quantidade, setQuantidade] = useState('1')
@@ -63,13 +65,17 @@ export default function Vendas() {
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [valorEntrada, setValorEntrada] = useState('')
   
-  // Busca inteligente de produtos
+  // Busca inteligente
   const [termoBuscaProduto, setTermoBuscaProduto] = useState('')
   const [produtoSelecionadoObj, setProdutoSelecionadoObj] = useState(null)
   const [mostrarDropdownBusca, setMostrarDropdownBusca] = useState(false)
   const dropdownRef = useRef(null)
 
-  // Câmera / Leitor
+  // Modal Escolha de Variação (Tamanho/Cor)
+  const [modalEscolhaVarAberto, setModalEscolhaVarAberto] = useState(false)
+  const [prodParaEscolherVar, setProdParaEscolherVar] = useState(null)
+
+  // Câmera
   const [modalCameraAberto, setModalCameraAberto] = useState(false)
   const [html5QrCodeScanner, setHtml5QrCodeScanner] = useState(null)
 
@@ -78,19 +84,35 @@ export default function Vendas() {
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // Modal Fechamento Caixa
+  // Caixa Resumo
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [vendasDoDia, setVendasDoDia] = useState([])
   const [carregandoCaixa, setCarregandoCaixa] = useState(false)
 
   const carregarDados = async () => {
     const { data: prodData } = await supabase.from('produtos').select('*').order('nome')
+    const { data: varData } = await supabase.from('variacoes_grade').select('*')
     const { data: cliData } = await supabase.from('clientes').select('*').order('nome')
-    const { data: cfgData } = await supabase.from('configuracoes').select('valor').eq('chave', 'cashback_percentual').maybeSingle()
+    const { data: cfgData } = await supabase.from('configuracoes').select('*')
 
     if (prodData) setProdutos(prodData)
+    if (varData) setVariacoes(varData)
     if (cliData) setClientes(cliData)
-    if (cfgData) setTaxaCashback(parseFloat(cfgData.valor) || 0)
+
+    if (cfgData) {
+      const mapa = {}
+      cfgData.forEach(c => { mapa[c.chave] = c.valor })
+      setTaxaCashback(parseFloat(mapa['cashback_percentual']) || 5)
+      setDadosEmpresa({
+        nome: mapa['empresa_nome'],
+        documento: mapa['empresa_documento'],
+        telefone: mapa['empresa_telefone'],
+        endereco: mapa['empresa_endereco'],
+        cidadeUf: mapa['empresa_cidade_uf'],
+        instagram: mapa['empresa_instagram'],
+        mensagemCupom: mapa['empresa_mensagem_cupom']
+      })
+    }
   }
 
   useEffect(() => {
@@ -107,48 +129,67 @@ export default function Vendas() {
     return () => document.removeEventListener('mousedown', handleClickFora)
   }, [])
 
+  // Filtra produtos ou variações por código de barras
   const produtosFiltradosBusca = produtos.filter(p => {
     if (!termoBuscaProduto) return true
     const t = termoBuscaProduto.toLowerCase()
-    return p.nome.toLowerCase().includes(t) || (p.codigo_barras && p.codigo_barras.toLowerCase().includes(t))
+    const temNaVar = variacoes.some(v => v.produto_id === p.id && v.codigo_barras && v.codigo_barras.toLowerCase().includes(t))
+    return p.nome.toLowerCase().includes(t) || (p.codigo_barras && p.codigo_barras.toLowerCase().includes(t)) || temNaVar
   }).slice(0, 8)
 
   const selecionarProdutoBusca = (produto) => {
-    setProdutoSelecionadoObj(produto)
-    setTermoBuscaProduto(produto.nome)
-    setMostrarDropdownBusca(false)
+    const vars = variacoes.filter(v => v.produto_id === produto.id)
+    if (vars.length > 0) {
+      // Abre modal para o usuário clicar no tamanho desejado
+      setProdParaEscolherVar(produto)
+      setModalEscolhaVarAberto(true)
+      setMostrarDropdownBusca(false)
+    } else {
+      setProdutoSelecionadoObj(produto)
+      setTermoBuscaProduto(produto.nome)
+      setMostrarDropdownBusca(false)
+    }
   }
 
-  const adicionarItemAoPedido = (produto, qtdParam = 1) => {
+  // Adiciona ao pedido tratando variação individual
+  const adicionarItemAoPedido = (produto, qtdParam = 1, variacao = null) => {
     if (!produto) return
-    const qtd = parseInt(qtdParam)
+    const qtd = parseInt(qtdParam) || 1
     if (qtd <= 0) return
 
-    const itemExistente = itensVenda.find(i => i.produtoId === produto.id)
+    const itemKey = variacao ? `${produto.id}-${variacao.id}` : `${produto.id}-base`
+    const estoqueDisponivel = variacao ? variacao.estoque : produto.estoque
+
+    const itemExistente = itensVenda.find(i => i.itemKey === itemKey)
     const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
 
-    if (produto.estoque < qtdTotalPretendida) {
-      alert(`Estoque insuficiente de "${produto.nome}"! Disponível: ${produto.estoque} un.`)
+    if (estoqueDisponivel < qtdTotalPretendida) {
+      alert(`Estoque insuficiente! Disponível: ${estoqueDisponivel} un.`)
       return
     }
 
+    const nomeFormatado = variacao 
+      ? `${produto.nome} (${[variacao.tamanho, variacao.cor].filter(Boolean).join('/')})`
+      : produto.nome
+
     if (itemExistente) {
       setItensVenda(itensVenda.map(item => 
-        item.produtoId === produto.id 
+        item.itemKey === itemKey 
           ? { ...item, quantidade: item.quantidade + qtd, subtotal: (item.quantidade + qtd) * item.preco }
           : item
       ))
     } else {
-      const novoItem = {
+      setItensVenda([...itensVenda, {
         id: Date.now(),
+        itemKey,
         produtoId: produto.id,
-        nomeProduto: produto.nome,
+        variacaoId: variacao ? variacao.id : null,
+        nomeProduto: nomeFormatado,
         preco: Number(produto.preco) || 0,
         preco_custo: Number(produto.preco_custo) || 0,
         quantidade: qtd,
         subtotal: (Number(produto.preco) || 0) * qtd
-      }
-      setItensVenda([...itensVenda, novoItem])
+      }])
     }
 
     setProdutoSelecionadoObj(null)
@@ -159,22 +200,43 @@ export default function Vendas() {
   const handleKeyDownBusca = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      const porCodigo = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === termoBuscaProduto.trim())
+      const codigoLimpo = termoBuscaProduto.trim()
+
+      // 1. Verifica se é o código exato de uma variação
+      const varExata = variacoes.find(v => v.codigo_barras && v.codigo_barras.trim() === codigoLimpo)
+      if (varExata) {
+        const prodPai = produtos.find(p => p.id === varExata.produto_id)
+        if (prodPai) {
+          adicionarItemAoPedido(prodPai, quantidade, varExata)
+          return
+        }
+      }
+
+      // 2. Verifica se é o código geral do produto
+      const porCodigo = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === codigoLimpo)
       if (porCodigo) {
-        adicionarItemAoPedido(porCodigo, quantidade)
+        const vars = variacoes.filter(v => v.produto_id === porCodigo.id)
+        if (vars.length > 0) {
+          setProdParaEscolherVar(porCodigo)
+          setModalEscolhaVarAberto(true)
+        } else {
+          adicionarItemAoPedido(porCodigo, quantidade)
+        }
         return
       }
+
       if (produtoSelecionadoObj) {
         adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
         return
       }
+
       if (produtosFiltradosBusca.length === 1) {
-        adicionarItemAoPedido(produtosFiltradosBusca[0], quantidade)
+        selecionarProdutoBusca(produtosFiltradosBusca[0])
       }
     }
   }
 
-  // Câmera
+  // Câmera do Celular
   const abrirScannerCamera = async () => {
     setModalCameraAberto(true)
     if (!window.Html5Qrcode) {
@@ -197,13 +259,33 @@ export default function Vendas() {
         config,
         (decodedText) => {
           if (navigator.vibrate) navigator.vibrate(100)
-          const prod = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === decodedText.trim())
+          const codigo = decodedText.trim()
+
+          // Procura variação
+          const varAchada = variacoes.find(v => v.codigo_barras && v.codigo_barras.trim() === codigo)
+          if (varAchada) {
+            const prod = produtos.find(p => p.id === varAchada.produto_id)
+            if (prod) {
+              adicionarItemAoPedido(prod, 1, varAchada)
+              fecharScannerCamera(html5QrCode)
+              return alert(`✅ ${prod.nome} (${varAchada.tamanho}) adicionado!`)
+            }
+          }
+
+          // Procura produto pai
+          const prod = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === codigo)
           if (prod) {
-            adicionarItemAoPedido(prod, 1)
             fecharScannerCamera(html5QrCode)
-            alert(`✅ ${prod.nome} adicionado ao pedido!`)
+            const vars = variacoes.filter(v => v.produto_id === prod.id)
+            if (vars.length > 0) {
+              setProdParaEscolherVar(prod)
+              setModalEscolhaVarAberto(true)
+            } else {
+              adicionarItemAoPedido(prod, 1)
+              alert(`✅ ${prod.nome} adicionado!`)
+            }
           } else {
-            alert(`Código "${decodedText}" não cadastrado.`)
+            alert(`Código "${codigo}" não cadastrado.`)
           }
         },
         () => {}
@@ -227,18 +309,13 @@ export default function Vendas() {
     setHtml5QrCodeScanner(null)
   }
 
-  // Caixa Resumo do Dia
+  // Caixa Resumo
   const abrirFechamentoCaixa = async () => {
     setCarregandoCaixa(true)
     setModalCaixaAberto(true)
     const hoje = new Date()
     hoje.setHours(0, 0, 0, 0)
-    const { data } = await supabase
-      .from('vendas')
-      .select('*, clientes(nome)')
-      .gte('created_at', hoje.toISOString())
-      .order('created_at', { ascending: true })
-
+    const { data } = await supabase.from('vendas').select('*, clientes(nome)').gte('created_at', hoje.toISOString()).order('created_at', { ascending: true })
     if (data) setVendasDoDia(data)
     setCarregandoCaixa(false)
   }
@@ -272,11 +349,20 @@ export default function Vendas() {
   const alterarQtdItem = (id, delta) => {
     setItensVenda(itensVenda.map(item => {
       if (item.id === id) {
-        const produto = produtos.find(p => p.id === item.produtoId)
         const novaQtd = item.quantidade + delta
         if (novaQtd <= 0) return null
-        if (delta > 0 && novaQtd > (produto?.estoque || 0)) {
-          alert(`Estoque máximo atingido (${produto?.estoque} un)!`)
+
+        let estMax = 9999
+        if (item.variacaoId) {
+          const v = variacoes.find(x => x.id === item.variacaoId)
+          estMax = v ? v.estoque : 9999
+        } else {
+          const p = produtos.find(x => x.id === item.produtoId)
+          estMax = p ? p.estoque : 9999
+        }
+
+        if (delta > 0 && novaQtd > estMax) {
+          alert(`Estoque máximo atingido (${estMax} un)!`)
           return item
         }
         return { ...item, quantidade: novaQtd, subtotal: novaQtd * item.preco }
@@ -297,6 +383,7 @@ export default function Vendas() {
     setSalvando(true)
     const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
     const nomeCliente = clienteAtual ? clienteAtual.nome : 'Cliente Avulso'
+    const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
 
     try {
       const { data: vendaCriada, error: erroVenda } = await supabase
@@ -330,20 +417,35 @@ export default function Vendas() {
         }])
       }
 
-      // Baixa estoque
+      // Baixa no Estoque (trata variações e produtos normais)
       for (const item of itensVenda) {
-        const prodOriginal = produtos.find(p => p.id === item.produtoId)
-        if (prodOriginal) {
-          await supabase.from('produtos').update({ estoque: Math.max(0, (prodOriginal.estoque || 0) - item.quantidade) }).eq('id', item.produtoId)
+        if (item.variacaoId) {
+          const v = variacoes.find(x => x.id === item.variacaoId)
+          if (v) {
+            const novoEstVar = Math.max(0, v.estoque - item.quantidade)
+            await supabase.from('variacoes_grade').update({ estoque: novoEstVar }).eq('id', item.variacaoId)
+          }
+        }
+
+        const p = produtos.find(x => x.id === item.produtoId)
+        if (p) {
+          const novoEstProd = Math.max(0, p.estoque - item.quantidade)
+          await supabase.from('produtos').update({ estoque: novoEstProd }).eq('id', item.produtoId)
         }
       }
 
       const codFormatado = formatarIdVenda(vendaCriada.id)
-      if (confirm(`Venda #${codFormatado} finalizada com sucesso!\nAbrir comprovante PDF agora?`)) {
-        gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } })
+
+      if (telefoneCliente && confirm(`Venda #${codFormatado} finalizada!\nDeseja enviar o Cupom Digital para o WhatsApp de ${nomeCliente}?`)) {
+        const numLimpo = telefoneCliente.replace(/\D/g, '')
+        const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
+        const vendaCompleta = { ...vendaCriada, clientes: { nome: nomeCliente, saldo_cashback: saldoFinalCliente } }
+        const textoCupom = gerarTextoCupomWhatsApp(vendaCompleta, dadosEmpresa, novoCashbackGerado)
+        window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${encodeURIComponent(textoCupom)}`, '_blank')
+      } else if (confirm(`Venda #${codFormatado} finalizada!\nDeseja abrir o comprovante para impressão?`)) {
+        gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } }, dadosEmpresa)
       }
 
-      // Limpa para a próxima venda
       setItensVenda([])
       setClienteSelecionado('')
       setFormaPagamento('dinheiro')
@@ -402,11 +504,19 @@ export default function Vendas() {
         .total-value { font-size: 1.85rem; font-weight: 800; color: #2563eb; }
         .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
 
+        /* Modal Escolha de Variação */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 110; backdrop-filter: blur(2px); padding: 1rem; }
+        .modal-card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        .var-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin: 1rem 0; }
+        .var-btn { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; background: #ffffff; cursor: pointer; text-align: left; transition: all 0.15s; }
+        .var-btn:hover { border-color: #2563eb; background: #eff6ff; }
+        .var-btn strong { display: block; color: #0f172a; font-size: 0.95rem; }
+        .var-btn span { font-size: 0.75rem; color: #64748b; }
+
         .modal-camera-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); display: flex; align-items: center; justify-content: center; z-index: 120; padding: 1rem; }
         .modal-camera-box { background: #ffffff; width: 100%; max-width: 440px; border-radius: 18px; padding: 1.5rem; text-align: center; }
         #reader-camera { width: 100%; border-radius: 12px; overflow: hidden; }
 
-        /* Modal Fechamento */
         .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
         .modal-sheet { background: #ffffff; width: 100%; max-width: 580px; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
         .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
@@ -427,8 +537,8 @@ export default function Vendas() {
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">Frente de Caixa (PDV)</h1>
-          <p className="page-subtitle"><IconStore /> {DADOS_EMPRESA.nome}</p>
+          <h1 className="page-title">PDV (Frente de Caixa)</h1>
+          <p className="page-subtitle"><IconStore /> {dadosEmpresa?.nome || DADOS_EMPRESA.nome}</p>
         </div>
 
         <button className="btn btn-outline-dark" onClick={abrirFechamentoCaixa} style={{ gap: '8px' }}>
@@ -501,10 +611,10 @@ export default function Vendas() {
           <h2>Adicionar Produtos</h2>
           <div className="form-row">
             <div className="form-group" style={{ flex: 3 }} ref={dropdownRef}>
-              <label>Buscar Produto (Nome ou Código de Barras)</label>
+              <label>Buscar Produto ou Variação (Nome ou Código de Barras)</label>
               <input 
                 type="text" 
-                placeholder="Digite o nome, código ou bipe no teclado..."
+                placeholder="Digite o nome, código da peça ou bipe no teclado..."
                 value={termoBuscaProduto}
                 onChange={e => { setTermoBuscaProduto(e.target.value); setMostrarDropdownBusca(true); }}
                 onFocus={() => setMostrarDropdownBusca(true)}
@@ -557,12 +667,14 @@ export default function Vendas() {
           <button 
             className="btn btn-primary" 
             onClick={() => {
-              if (!produtoSelecionadoObj && termoBuscaProduto) {
+              if (produtoSelecionadoObj) {
+                adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
+              } else if (termoBuscaProduto) {
                 const exato = produtos.find(p => p.nome.toLowerCase() === termoBuscaProduto.toLowerCase() || (p.codigo_barras && p.codigo_barras === termoBuscaProduto))
-                if (exato) return adicionarItemAoPedido(exato, quantidade)
+                if (exato) selecionarProdutoBusca(exato)
+              } else {
+                alert('Selecione um produto ou bipe o código.')
               }
-              if (!produtoSelecionadoObj) return alert('Selecione um produto ou bipe o código.')
-              adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
             }} 
             style={{ gap: '6px' }}
           >
@@ -577,7 +689,7 @@ export default function Vendas() {
           <table>
             <thead>
               <tr>
-                <th>Produto</th>
+                <th>Produto / Variação</th>
                 <th>Preço Unit.</th>
                 <th style={{ textAlign: 'center' }}>Quantidade</th>
                 <th>Subtotal</th>
@@ -656,6 +768,44 @@ export default function Vendas() {
               <button className="btn btn-success btn-lg" onClick={finalizarVenda} disabled={salvando} style={{ gap: '8px' }}>
                 <IconCheck /> {salvando ? 'Processando...' : 'Finalizar Venda'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ESCOLHA DE TAMANHO / COR NO PDV */}
+      {modalEscolhaVarAberto && prodParaEscolherVar && (
+        <div className="modal-overlay" onClick={() => setModalEscolhaVarAberto(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', color: '#0f172a' }}>Escolha o Tamanho / Cor</h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{prodParaEscolherVar.nome}</span>
+              </div>
+              <button onClick={() => setModalEscolhaVarAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+            </div>
+
+            <div className="var-grid">
+              {variacoes.filter(v => v.produto_id === prodParaEscolherVar.id).map(v => (
+                <button 
+                  key={v.id} 
+                  className="var-btn"
+                  onClick={() => {
+                    adicionarItemAoPedido(prodParaEscolherVar, quantidade, v)
+                    setModalEscolhaVarAberto(false)
+                  }}
+                >
+                  <strong>{v.tamanho || 'Único'}</strong>
+                  <span>{v.cor || 'Padrão'}</span>
+                  <div style={{ fontSize: '0.72rem', color: v.estoque > 0 ? '#16a34a' : '#dc2626', marginTop: '4px' }}>
+                    {v.estoque > 0 ? `${v.estoque} un disponíveis` : 'Sem estoque'}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setModalEscolhaVarAberto(false)}>Cancelar</button>
             </div>
           </div>
         </div>
