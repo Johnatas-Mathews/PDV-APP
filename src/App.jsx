@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Vendas from './pages/Vendas'
 import HistoricoVendas from './pages/HistoricoVendas'
@@ -80,7 +81,7 @@ const IconRelatorios = () => (
 
 const IconConfig = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 )
 
@@ -102,156 +103,28 @@ const IconUser = () => (
   </svg>
 )
 
+const IconLogout = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+  </svg>
+)
+
 const IconLoja = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
   </svg>
 )
 
-// COMPONENTE DO MODAL DE IDENTIFICAÇÃO / PIN
-function ModalLoginOperador() {
-  const { modalLoginAberto, setModalLoginAberto, usuariosDisponiveis, autenticar, loadingAuth, operador } = useAuth()
-  const [usuarioSel, setUsuarioSel] = useState('')
-  const [pin, setPin] = useState('')
-
-  if (!modalLoginAberto) return null
-
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    if (!usuarioSel) return alert('Selecione o operador.')
-    if (!pin) return alert('Digite o PIN de 4 dígitos.')
-
-    const ok = await autenticar(usuarioSel, pin)
-    if (ok) {
-      setPin('')
-    }
-  }
-
-  const handleAddDigit = (d) => {
-    if (pin.length < 6) setPin(prev => prev + d)
-  }
-
-  const handleBackspace = () => {
-    setPin(prev => prev.slice(0, -1))
-  }
-
-  return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(15, 23, 42, 0.75)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 200,
-      backdropFilter: 'blur(3px)',
-      padding: '1rem'
-    }}>
-      <div style={{
-        background: '#ffffff',
-        width: '100%',
-        maxWidth: '360px',
-        borderRadius: '20px',
-        padding: '1.75rem',
-        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)',
-        textAlign: 'center'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>Identificar Operador</h3>
-          {operador && (
-            <button onClick={() => setModalLoginAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>✕</button>
-          )}
-        </div>
-
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-              Selecione seu Nome
-            </label>
-            <select
-              value={usuarioSel}
-              onChange={e => setUsuarioSel(e.target.value)}
-              style={{ width: '100%', height: '44px', padding: '0 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.95rem', fontWeight: 600, color: '#0f172a' }}
-              required
-            >
-              <option value="">-- Quem está operando? --</option>
-              {usuariosDisponiveis.map(u => (
-                <option key={u.id} value={u.id}>
-                  {u.nome} ({u.perfil === 'admin' ? 'Administrador' : 'Vendedor'})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '1.25rem' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', textAlign: 'left' }}>
-              PIN de Acesso
-            </label>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="••••"
-              value={pin}
-              onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
-              style={{ width: '100%', height: '48px', fontSize: '1.75rem', textAlign: 'center', letterSpacing: '0.3em', borderRadius: '10px', border: '1px solid #cbd5e1', fontWeight: 800 }}
-              required
-            />
-          </div>
-
-          {/* Teclado Touch Numérico para Celular / Balcão */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '1.25rem' }}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-              <button
-                key={num}
-                type="button"
-                onClick={() => handleAddDigit(String(num))}
-                style={{ height: '46px', fontSize: '1.2rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
-              >
-                {num}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setPin('')}
-              style={{ height: '46px', fontSize: '0.8rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
-            >
-              Limpar
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAddDigit('0')}
-              style={{ height: '46px', fontSize: '1.2rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
-            >
-              0
-            </button>
-            <button
-              type="button"
-              onClick={handleBackspace}
-              style={{ height: '46px', fontSize: '1.1rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
-            >
-              ⌫
-            </button>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loadingAuth}
-            style={{ width: '100%', height: '46px', background: '#2563eb', color: '#ffffff', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
-          >
-            {loadingAuth ? 'Validando...' : 'Acessar Caixa'}
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 function MainAppLayout() {
   const [sidebarAberta, setSidebarAberta] = useState(true)
-  const { operador, isAdmin, setModalLoginAberto, logout } = useAuth()
+  const { operador, isAdmin, logout } = useAuth()
 
-  // Links do menu filtrados por permissão
+  // Se NÃO estiver autenticado, exibe a tela cheia oficial de Login
+  if (!operador) {
+    return <Login />
+  }
+
+  // Links do menu filtrados por perfil de acesso
   const todosOsLinks = [
     { to: '/', label: 'Dashboard', icon: IconDashboard, apenasAdmin: true },
     { to: '/pdv', label: 'PDV', icon: IconPDV, apenasAdmin: false },
@@ -329,7 +202,7 @@ function MainAppLayout() {
         .sidebar-link:hover { color: #ffffff; background: #1e293b; }
         .sidebar-link.active { color: #ffffff; background: #2563eb; }
 
-        /* Rodapé com Card do Operador Ativo */
+        /* Rodapé com Perfil do Operador e Botão Sair */
         .sidebar-user-box {
           margin-top: auto;
           background: #111827;
@@ -344,8 +217,8 @@ function MainAppLayout() {
         .user-avatar { width: 30px; height: 30px; border-radius: 50%; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; }
         .user-name { font-size: 0.82rem; font-weight: 700; color: #ffffff; display: block; }
         .user-role { font-size: 0.68rem; color: #9ca3af; display: block; text-transform: uppercase; }
-        .btn-trocar-user { background: transparent; border: none; color: #60a5fa; cursor: pointer; font-size: 0.72rem; font-weight: 700; }
-        .btn-trocar-user:hover { text-decoration: underline; }
+        .btn-logout { background: transparent; border: none; color: #ef4444; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 0.75rem; font-weight: 700; padding: 4px 6px; border-radius: 6px; }
+        .btn-logout:hover { background: rgba(239, 68, 68, 0.1); }
 
         .app-main-content {
           flex: 1;
@@ -367,20 +240,17 @@ function MainAppLayout() {
         }
       `}</style>
 
-      {/* Botão Hambúrguer */}
       {!sidebarAberta && (
         <button className="btn-reabrir-sidebar" onClick={() => setSidebarAberta(true)} title="Abrir menu">
           <IconMenuHamburger />
         </button>
       )}
 
-      {/* Backdrop Mobile */}
       <div 
         className={`sidebar-backdrop ${sidebarAberta ? 'visivel' : ''}`} 
         onClick={() => setSidebarAberta(false)}
       />
 
-      {/* Sidebar */}
       <aside className={`app-sidebar ${sidebarAberta ? '' : 'recolhida'}`}>
         <div className="sidebar-brand">
           <div className="brand-content">
@@ -418,24 +288,23 @@ function MainAppLayout() {
           })}
         </nav>
 
-        {/* Informações do Operador Ativo no Rodapé */}
+        {/* Rodapé do Operador com Botão Oficial de Sair */}
         <div className="sidebar-user-box">
           <div className="user-info">
             <div className="user-avatar">
               <IconUser />
             </div>
             <div>
-              <span className="user-name">{operador?.nome || 'Operador'}</span>
-              <span className="user-role">{operador?.perfil === 'admin' ? 'Gerente' : 'Vendedor'}</span>
+              <span className="user-name">{operador.nome}</span>
+              <span className="user-role">{operador.perfil === 'admin' ? 'Administrador' : 'Vendedor'}</span>
             </div>
           </div>
-          <button className="btn-trocar-user" onClick={() => setModalLoginAberto(true)}>
-            Trocar
+          <button className="btn-logout" onClick={logout} title="Fazer Logout">
+            <IconLogout /> Sair
           </button>
         </div>
       </aside>
 
-      {/* Rotas com Proteção de Perfil */}
       <main className={`app-main-content ${sidebarAberta ? '' : 'sidebar-fechada'}`}>
         <Routes>
           <Route path="/" element={isAdmin ? <Dashboard /> : <Navigate to="/pdv" replace />} />
@@ -451,8 +320,6 @@ function MainAppLayout() {
           <Route path="/configuracoes" element={isAdmin ? <Configuracoes /> : <Navigate to="/pdv" replace />} />
         </Routes>
       </main>
-
-      <ModalLoginOperador />
     </div>
   )
 }
