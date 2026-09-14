@@ -1,24 +1,50 @@
-// Utilitário de geração e impressão de comprovante térmico/A4 com dados dinâmicos da empresa
+import { supabase } from '../supabase'
 
+// Fallback caso o banco esteja indisponível
 export const DADOS_EMPRESA_PADRAO = {
-  nome: 'TECCO MODA & ESTILO',
-  documento: 'CNPJ: 00.000.000/0001-00',
-  endereco: 'Rua do Comércio, 100 - Centro',
-  cidadeUf: 'São Paulo - SP',
-  telefone: '(11) 99999-9999',
-  instagram: '@teccomoda',
+  nome: 'MINHA LOJA',
+  documento: '',
+  endereco: '',
+  cidadeUf: '',
+  telefone: '',
+  instagram: '',
   mensagemCupom: 'Obrigado pela preferência! Volte sempre.'
 }
 
-// Mantém retrocompatibilidade para Vendas.jsx e HistoricoVendas.jsx
 export const DADOS_EMPRESA = DADOS_EMPRESA_PADRAO
 
 export const formatarIdVenda = (id) => {
   return String(id || 0).padStart(5, '0')
 }
 
-export const gerarComprovanteVenda = (venda, dadosEmpresaCustom = null) => {
-  const empresa = { ...DADOS_EMPRESA_PADRAO, ...(dadosEmpresaCustom || {}) }
+// Busca as configurações da loja em tempo real no Supabase
+export const obterDadosEmpresaAtualizados = async () => {
+  try {
+    const { data } = await supabase.from('configuracoes').select('*')
+    if (data && data.length > 0) {
+      const mapa = {}
+      data.forEach(item => { mapa[item.chave] = item.valor })
+
+      return {
+        nome: mapa['empresa_nome'] || DADOS_EMPRESA_PADRAO.nome,
+        documento: mapa['empresa_documento'] || '',
+        telefone: mapa['empresa_telefone'] || '',
+        endereco: mapa['empresa_endereco'] || '',
+        cidadeUf: mapa['empresa_cidade_uf'] || '',
+        instagram: mapa['empresa_instagram'] || '',
+        mensagemCupom: mapa['empresa_mensagem_cupom'] || DADOS_EMPRESA_PADRAO.mensagemCupom
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao buscar dados da empresa:', err)
+  }
+  return DADOS_EMPRESA_PADRAO
+}
+
+export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) => {
+  // Se não foi passado manualmente, busca a versão mais recente salva no banco
+  const empresa = dadosEmpresaManual || await obterDadosEmpresaAtualizados()
+
   const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
   const codVenda = formatarIdVenda(venda.id)
   const itens = Array.isArray(venda.itens) ? venda.itens : []
@@ -36,7 +62,7 @@ export const gerarComprovanteVenda = (venda, dadosEmpresaCustom = null) => {
   // 3. Diferença apurada como desconto
   const valorDesconto = Math.max(0, subtotalItens - totalCobrado)
 
-  // 4. Linhas da tabela de produtos
+  // 4. Linhas dos produtos
   const linhasItensHtml = itens.map(item => {
     const qtd = Number(item.quantidade || 1)
     const unit = Number(item.preco || 0)
