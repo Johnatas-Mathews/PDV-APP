@@ -81,7 +81,7 @@ const IconRelatorios = () => (
 
 const IconConfig = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 )
 
@@ -117,29 +117,29 @@ const IconLoja = () => (
 
 function MainAppLayout() {
   const [sidebarAberta, setSidebarAberta] = useState(true)
-  const { operador, isAdmin, logout } = useAuth()
+  const { operador, temPermissao, logout } = useAuth()
 
-  // Se NÃO estiver autenticado, exibe a tela cheia oficial de Login
   if (!operador) {
     return <Login />
   }
 
-  // Links do menu filtrados por perfil de acesso
+  // Lista com chaves de permissão
   const todosOsLinks = [
-    { to: '/', label: 'Dashboard', icon: IconDashboard, apenasAdmin: true },
-    { to: '/pdv', label: 'PDV', icon: IconPDV, apenasAdmin: false },
-    { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico, apenasAdmin: false },
-    { to: '/condicionais', label: 'Condicionais (Mala)', icon: IconCondicionais, apenasAdmin: false },
-    { to: '/compras', label: 'Compras & Reposição', icon: IconCompras, apenasAdmin: true },
-    { to: '/produtos', label: 'Produtos', icon: IconProdutos, apenasAdmin: false },
-    { to: '/clientes', label: 'Clientes', icon: IconClientes, apenasAdmin: false },
-    { to: '/fornecedores', label: 'Fornecedores', icon: IconFornecedores, apenasAdmin: true },
-    { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas, apenasAdmin: true },
-    { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios, apenasAdmin: true },
-    { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig, apenasAdmin: true },
+    { to: '/', label: 'Dashboard', icon: IconDashboard, chave: 'dashboard' },
+    { to: '/pdv', label: 'PDV', icon: IconPDV, chave: 'pdv' },
+    { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico, chave: 'vendas' },
+    { to: '/condicionais', label: 'Condicionais (Mala)', icon: IconCondicionais, chave: 'condicionais' },
+    { to: '/compras', label: 'Compras & Reposição', icon: IconCompras, chave: 'compras' },
+    { to: '/produtos', label: 'Produtos', icon: IconProdutos, chave: 'produtos' },
+    { to: '/clientes', label: 'Clientes', icon: IconClientes, chave: 'clientes' },
+    { to: '/fornecedores', label: 'Fornecedores', icon: IconFornecedores, chave: 'fornecedores' },
+    { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas, chave: 'contas_receber' },
+    { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios, chave: 'relatorios' },
+    { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig, chave: 'configuracoes' },
   ]
 
-  const linksVisiveis = todosOsLinks.filter(item => !item.apenasAdmin || isAdmin)
+  // Filtra apenas o que o operador logado tem autorização para ver
+  const linksVisiveis = todosOsLinks.filter(item => temPermissao(item.chave))
 
   return (
     <div className="app-layout">
@@ -202,7 +202,6 @@ function MainAppLayout() {
         .sidebar-link:hover { color: #ffffff; background: #1e293b; }
         .sidebar-link.active { color: #ffffff; background: #2563eb; }
 
-        /* Rodapé com Perfil do Operador e Botão Sair */
         .sidebar-user-box {
           margin-top: auto;
           background: #111827;
@@ -288,7 +287,6 @@ function MainAppLayout() {
           })}
         </nav>
 
-        {/* Rodapé do Operador com Botão Oficial de Sair */}
         <div className="sidebar-user-box">
           <div className="user-info">
             <div className="user-avatar">
@@ -307,17 +305,17 @@ function MainAppLayout() {
 
       <main className={`app-main-content ${sidebarAberta ? '' : 'sidebar-fechada'}`}>
         <Routes>
-          <Route path="/" element={isAdmin ? <Dashboard /> : <Navigate to="/pdv" replace />} />
-          <Route path="/pdv" element={<Vendas />} />
-          <Route path="/vendas" element={<HistoricoVendas />} />
-          <Route path="/condicionais" element={<Condicionais />} />
-          <Route path="/compras" element={isAdmin ? <Compras /> : <Navigate to="/pdv" replace />} />
-          <Route path="/produtos" element={<Produtos />} />
-          <Route path="/clientes" element={<Clientes />} />
-          <Route path="/fornecedores" element={isAdmin ? <Fornecedores /> : <Navigate to="/pdv" replace />} />
-          <Route path="/contas-receber" element={isAdmin ? <ContasReceber /> : <Navigate to="/pdv" replace />} />
-          <Route path="/relatorios" element={isAdmin ? <Relatorios /> : <Navigate to="/pdv" replace />} />
-          <Route path="/configuracoes" element={isAdmin ? <Configuracoes /> : <Navigate to="/pdv" replace />} />
+          <Route path="/" element={temPermissao('dashboard') ? <Dashboard /> : <Navigate to="/pdv" replace />} />
+          <Route path="/pdv" element={temPermissao('pdv') ? <Vendas /> : <Navigate to="/vendas" replace />} />
+          <Route path="/vendas" element={temPermissao('vendas') ? <HistoricoVendas /> : <Navigate to="/" replace />} />
+          <Route path="/condicionais" element={temPermissao('condicionais') ? <Condicionais /> : <Navigate to="/pdv" replace />} />
+          <Route path="/compras" element={temPermissao('compras') ? <Compras /> : <Navigate to="/pdv" replace />} />
+          <Route path="/produtos" element={temPermissao('produtos') ? <Produtos /> : <Navigate to="/pdv" replace />} />
+          <Route path="/clientes" element={temPermissao('clientes') ? <Clientes /> : <Navigate to="/pdv" replace />} />
+          <Route path="/fornecedores" element={temPermissao('fornecedores') ? <Fornecedores /> : <Navigate to="/pdv" replace />} />
+          <Route path="/contas-receber" element={temPermissao('contas_receber') ? <ContasReceber /> : <Navigate to="/pdv" replace />} />
+          <Route path="/relatorios" element={temPermissao('relatorios') ? <Relatorios /> : <Navigate to="/pdv" replace />} />
+          <Route path="/configuracoes" element={temPermissao('configuracoes') ? <Configuracoes /> : <Navigate to="/pdv" replace />} />
         </Routes>
       </main>
     </div>
