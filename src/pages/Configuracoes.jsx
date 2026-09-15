@@ -19,8 +19,23 @@ const IconTrash = () => (
   </svg>
 )
 
+// Catálogo de Módulos para Concessão de Permissões
+const MODULOS_DISPONIVEIS = [
+  { chave: 'pdv', label: '🛒 PDV (Frente de Caixa)' },
+  { chave: 'vendas', label: '📋 Histórico de Vendas' },
+  { chave: 'condicionais', label: '👗 Mala de Roupas (Condicional)' },
+  { chave: 'contas_receber', label: '💰 Contas a Receber (Receber Crediário)' },
+  { chave: 'clientes', label: '👥 Clientes (Consultar / Cadastrar)' },
+  { chave: 'produtos', label: '🏷️ Produtos & Grade' },
+  { chave: 'dashboard', label: '📈 Dashboard Geral' },
+  { chave: 'compras', label: '📦 Compras & Reposição' },
+  { chave: 'fornecedores', label: '🚚 Fornecedores' },
+  { chave: 'relatorios', label: '📊 Relatórios & DRE' },
+  { chave: 'configuracoes', label: '⚙️ Minha Loja (Ajustes Fiscais/Usuários)' }
+]
+
 export default function Configuracoes() {
-  // Configurações Gerais da Loja
+  // Configurações Gerais
   const [empresaNome, setEmpresaNome] = useState('')
   const [empresaDocumento, setEmpresaDocumento] = useState('')
   const [empresaTelefone, setEmpresaTelefone] = useState('')
@@ -31,17 +46,17 @@ export default function Configuracoes() {
   const [cashbackPercentual, setCashbackPercentual] = useState('5')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
 
-  // Gerenciamento de Operadores (CRUD Completo)
+  // Gerenciamento de Operadores
   const [usuarios, setUsuarios] = useState([])
   const [idEditandoUsuario, setIdEditandoUsuario] = useState(null)
   const [nomeUsuario, setNomeUsuario] = useState('')
   const [loginUsuario, setLoginUsuario] = useState('')
   const [senhaUsuario, setSenhaUsuario] = useState('')
   const [perfilUsuario, setPerfilUsuario] = useState('vendedor')
+  const [permissoesUsuario, setPermissoesUsuario] = useState(['pdv', 'vendas', 'condicionais', 'contas_receber', 'clientes', 'produtos'])
   const [salvandoUsuario, setSalvandoUsuario] = useState(false)
 
   const carregarDados = async () => {
-    // 1. Configurações
     const { data: cfgData } = await supabase.from('configuracoes').select('*')
     if (cfgData) {
       const mapa = {}
@@ -56,7 +71,6 @@ export default function Configuracoes() {
       setCashbackPercentual(mapa['cashback_percentual'] || '5')
     }
 
-    // 2. Operadores
     const { data: uData } = await supabase.from('usuarios_loja').select('*').order('id')
     if (uData) setUsuarios(uData)
   }
@@ -98,14 +112,22 @@ export default function Configuracoes() {
     setLoginUsuario('')
     setSenhaUsuario('')
     setPerfilUsuario('vendedor')
+    setPermissoesUsuario(['pdv', 'vendas', 'condicionais', 'contas_receber', 'clientes', 'produtos'])
   }
 
   const iniciarEdicaoUsuario = (user) => {
     setIdEditandoUsuario(user.id)
     setNomeUsuario(user.nome || '')
     setLoginUsuario(user.login || '')
-    setSenhaUsuario('') // Deixa em branco: só preenche se for mudar a senha
+    setSenhaUsuario('')
     setPerfilUsuario(user.perfil || 'vendedor')
+    setPermissoesUsuario(Array.isArray(user.permissoes) ? user.permissoes : [])
+  }
+
+  const togglePermissao = (chave) => {
+    setPermissoesUsuario(prev => 
+      prev.includes(chave) ? prev.filter(p => p !== chave) : [...prev, chave]
+    )
   }
 
   const salvarOperador = async (e) => {
@@ -120,13 +142,18 @@ export default function Configuracoes() {
 
     setSalvandoUsuario(true)
     try {
+      // Se for admin, concede acesso a todos os módulos
+      const permsFinais = perfilUsuario === 'admin' 
+        ? MODULOS_DISPONIVEIS.map(m => m.chave)
+        : permissoesUsuario
+
       const payload = {
         nome: nomeUsuario.trim(),
         login: loginUsuario.trim().toLowerCase(),
-        perfil: perfilUsuario
+        perfil: perfilUsuario,
+        permissoes: permsFinais
       }
 
-      // Se preencheu senha, atualiza o PIN
       if (senhaUsuario.trim()) {
         payload.pin = senhaUsuario.trim()
       }
@@ -138,7 +165,7 @@ export default function Configuracoes() {
           .eq('id', idEditandoUsuario)
 
         if (error) throw error
-        alert('Dados do operador atualizados com sucesso!')
+        alert('Dados e permissões do operador atualizados com sucesso!')
       } else {
         payload.ativo = true
         const { error } = await supabase
@@ -159,12 +186,10 @@ export default function Configuracoes() {
 
   const excluirOperador = async (user) => {
     if (usuarios.length <= 1) {
-      return alert('Você não pode excluir o único operador cadastrado no sistema!')
+      return alert('Você não pode excluir o único operador cadastrado!')
     }
 
-    if (!confirm(`Deseja realmente excluir o operador "${user.nome}" (${user.login})? Esta ação não pode ser desfeita.`)) {
-      return
-    }
+    if (!confirm(`Deseja realmente excluir o operador "${user.nome}" (${user.login})?`)) return
 
     try {
       const { error } = await supabase.from('usuarios_loja').delete().eq('id', user.id)
@@ -205,6 +230,13 @@ export default function Configuracoes() {
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #cbd5e1; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; width: 100%; box-sizing: border-box; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
 
+        /* Matriz de Permissões com Checkboxes */
+        .permissoes-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem; margin-top: 0.75rem; margin-bottom: 1.25rem; }
+        .permissoes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
+        .perm-item { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: #1e293b; cursor: pointer; padding: 6px 8px; border-radius: 6px; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .perm-item:hover { background: #eff6ff; border-color: #bfdbfe; }
+        .perm-item input { width: 16px; height: 16px; cursor: pointer; }
+
         .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; }
         .btn-primary { background: #2563eb; color: #ffffff; }
         .btn-primary:hover { background: #1d4ed8; }
@@ -214,34 +246,36 @@ export default function Configuracoes() {
         .btn-sm { padding: 0.4rem 0.65rem; font-size: 0.8rem; border-radius: 6px; }
 
         .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
-        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 580px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; }
         th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 0.75rem 1rem; border-bottom: 1px solid #e2e8f0; }
         td { padding: 0.85rem 1rem; font-size: 0.88rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         tbody tr:hover { background: #f8fafc; }
 
         .badge-admin { background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
         .badge-vendedor { background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+        .tag-perm { display: inline-block; background: #f1f5f9; color: #475569; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; margin: 2px; }
 
         @media (max-width: 768px) {
           .grid-2, .grid-4 { grid-template-columns: 1fr; }
+          .permissoes-grid { grid-template-columns: 1fr; }
         }
       `}</style>
 
       <div className="page-header">
         <h1 className="page-title">Configurações da Loja</h1>
-        <p className="page-subtitle">Dados oficiais dos comprovantes, cashback e operadores do caixa</p>
+        <p className="page-subtitle">Dados da empresa, controle de acessos e permissões por perfil</p>
       </div>
 
-      {/* GESTÃO DE OPERADORES (CRIAR, EDITAR, EXCLUIR) */}
+      {/* GESTÃO DE OPERADORES & PERMISSÕES */}
       <div className="card-box">
-        <h2>👥 Equipe & Operadores de Caixa</h2>
+        <h2>👥 Equipe & Matriz de Permissões</h2>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-          Gerencie os acessos ao sistema. Você pode alterar seu login e senha de Administrador ou cadastrar vendedores.
+          Defina exatamente quais telas e módulos cada funcionário pode acessar (ex: permitir que o vendedor receba crediário).
         </p>
 
-        {/* Formulário de Cadastro / Edição */}
-        <form onSubmit={salvarOperador} style={{ background: '#f8fafc', padding: '1.1rem', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: '10px' }}>
+        {/* Formulário de Cadastro / Edição com Checkboxes */}
+        <form onSubmit={salvarOperador} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '14px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>
             {idEditandoUsuario ? `Editando Operador: ${nomeUsuario}` : 'Novo Operador'}
           </span>
 
@@ -250,7 +284,7 @@ export default function Configuracoes() {
               <label>Nome do Funcionário</label>
               <input 
                 type="text" 
-                placeholder="Ex: Carlos Gerente" 
+                placeholder="Ex: Carlos Vendedor" 
                 value={nomeUsuario} 
                 onChange={e => setNomeUsuario(e.target.value)} 
                 required 
@@ -261,7 +295,7 @@ export default function Configuracoes() {
               <label>Usuário de Login</label>
               <input 
                 type="text" 
-                placeholder="Ex: admin ou carlos" 
+                placeholder="Ex: carlos" 
                 value={loginUsuario} 
                 onChange={e => setLoginUsuario(e.target.value)} 
                 required 
@@ -279,13 +313,39 @@ export default function Configuracoes() {
             </div>
 
             <div className="form-group">
-              <label>Nível de Acesso</label>
+              <label>Tipo de Conta</label>
               <select value={perfilUsuario} onChange={e => setPerfilUsuario(e.target.value)}>
-                <option value="vendedor">Vendedor (Só Caixa/PDV)</option>
-                <option value="admin">Administrador (Total)</option>
+                <option value="vendedor">Personalizado / Vendedor</option>
+                <option value="admin">Administrador Geral (Total)</option>
               </select>
             </div>
           </div>
+
+          {/* Seletor de Permissões (Caixas de Seleção) */}
+          {perfilUsuario !== 'admin' ? (
+            <div className="permissoes-box">
+              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase', display: 'block' }}>
+                Marque os módulos que este usuário pode acessar:
+              </span>
+
+              <div className="permissoes-grid">
+                {MODULOS_DISPONIVEIS.map(mod => (
+                  <label key={mod.chave} className="perm-item">
+                    <input 
+                      type="checkbox" 
+                      checked={permissoesUsuario.includes(mod.chave)} 
+                      onChange={() => togglePermissao(mod.chave)} 
+                    />
+                    <span>{mod.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ background: '#fefce8', border: '1px solid #fef08a', padding: '10px 14px', borderRadius: '8px', margin: '10px 0 16px 0', fontSize: '0.85rem', color: '#854d0e' }}>
+              👑 <strong>Administrador Geral:</strong> possui acesso liberado a todos os módulos, custos e configurações automaticamente.
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <button type="submit" className="btn btn-primary" disabled={salvandoUsuario} style={{ gap: '6px' }}>
@@ -299,62 +359,85 @@ export default function Configuracoes() {
           </div>
         </form>
 
-        {/* Lista de Operadores com Edição e Exclusão */}
+        {/* Tabela de Operadores */}
         <div className="table-responsive">
           <table>
             <thead>
               <tr>
-                <th>Nome</th>
-                <th>Usuário (Login)</th>
-                <th>Nível de Acesso</th>
+                <th>Nome / Login</th>
+                <th>Perfil</th>
+                <th>Permissões Liberadas</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'center' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {usuarios.map(u => (
-                <tr key={u.id}>
-                  <td><strong>{u.nome}</strong></td>
-                  <td style={{ fontFamily: 'monospace', color: '#2563eb', fontWeight: 600 }}>{u.login || 'admin'}</td>
-                  <td>
-                    <span className={u.perfil === 'admin' ? 'badge-admin' : 'badge-vendedor'}>
-                      {u.perfil === 'admin' ? '👑 Administrador' : '🛍️ Vendedor'}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{ color: u.ativo ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
-                      {u.ativo ? '● Ativo' : '○ Inativo'}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'inline-flex', gap: '6px' }}>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => iniciarEdicaoUsuario(u)}
-                        title="Editar operador ou trocar senha"
-                      >
-                        <IconEdit /> Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => alternarStatusOperador(u.id, u.ativo)}
-                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
-                      >
-                        {u.ativo ? 'Desativar' : 'Ativar'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => excluirOperador(u)}
-                        title="Excluir operador"
-                      >
-                        <IconTrash />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {usuarios.map(u => {
+                const perms = Array.isArray(u.permissoes) ? u.permissoes : []
+                return (
+                  <tr key={u.id}>
+                    <td>
+                      <div><strong>{u.nome}</strong></div>
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#2563eb' }}>@{u.login || 'admin'}</span>
+                    </td>
+                    <td>
+                      <span className={u.perfil === 'admin' ? 'badge-admin' : 'badge-vendedor'}>
+                        {u.perfil === 'admin' ? '👑 Admin Geral' : '🛍️ Vendedor'}
+                      </span>
+                    </td>
+                    <td>
+                      {u.perfil === 'admin' ? (
+                        <span style={{ fontSize: '0.75rem', color: '#854d0e', fontWeight: 700 }}>Acesso Total (Todos os Módulos)</span>
+                      ) : perms.length === 0 ? (
+                        <span style={{ fontSize: '0.75rem', color: '#dc2626' }}>Sem permissões</span>
+                      ) : (
+                        <div>
+                          {perms.map(p => {
+                            const mod = MODULOS_DISPONIVEIS.find(m => m.chave === p)
+                            return (
+                              <span key={p} className="tag-perm">
+                                {mod ? mod.label.split(' ')[0] + ' ' + mod.label.split(' ')[1] : p}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <span style={{ color: u.ativo ? '#16a34a' : '#dc2626', fontWeight: 700 }}>
+                        {u.ativo ? '● Ativo' : '○ Inativo'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => iniciarEdicaoUsuario(u)}
+                          title="Editar dados e permissões"
+                        >
+                          <IconEdit /> Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => alternarStatusOperador(u.id, u.ativo)}
+                          style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+                        >
+                          {u.ativo ? 'Desativar' : 'Ativar'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => excluirOperador(u)}
+                          title="Excluir operador"
+                        >
+                          <IconTrash />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
