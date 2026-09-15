@@ -10,7 +10,6 @@ export function AuthProvider({ children }) {
   })
   const [loadingAuth, setLoadingAuth] = useState(false)
 
-  // Autenticação tradicional: Login + Senha
   const autenticar = async (usuarioDigitado, senhaDigitada) => {
     setLoadingAuth(true)
     try {
@@ -19,7 +18,7 @@ export function AuthProvider({ children }) {
 
       const { data, error } = await supabase
         .from('usuarios_loja')
-        .select('id, nome, login, pin, perfil, ativo')
+        .select('id, nome, login, pin, perfil, ativo, permissoes')
         .or(`login.ilike.${loginLimpo},nome.ilike.${loginLimpo}`)
         .eq('ativo', true)
         .maybeSingle()
@@ -36,11 +35,15 @@ export function AuthProvider({ children }) {
         return false
       }
 
+      // Permissões salvas no banco
+      const listaPermissoes = Array.isArray(data.permissoes) ? data.permissoes : []
+
       const dadosSessao = {
         id: data.id,
         nome: data.nome,
         login: data.login || loginLimpo,
-        perfil: data.perfil // 'admin' ou 'vendedor'
+        perfil: data.perfil, // 'admin' ou 'vendedor'
+        permissoes: listaPermissoes
       }
 
       setOperador(dadosSessao)
@@ -59,11 +62,19 @@ export function AuthProvider({ children }) {
     setOperador(null)
   }
 
+  // Função auxiliar para verificar permissão
+  const temPermissao = (chaveModulo) => {
+    if (!operador) return false
+    if (operador.perfil === 'admin') return true
+    return Array.isArray(operador.permissoes) && operador.permissoes.includes(chaveModulo)
+  }
+
   return (
     <AuthContext.Provider
       value={{
         operador,
         isAdmin: operador?.perfil === 'admin',
+        temPermissao,
         autenticar,
         logout,
         loadingAuth
