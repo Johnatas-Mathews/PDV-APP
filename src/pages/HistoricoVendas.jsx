@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { gerarComprovanteVenda, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
+import { gerarComprovanteVenda, gerarTextoCupomWhatsApp, formatarIdVenda } from '../utils/pdfGenerator'
+import { useAuth } from '../context/AuthContext'
 
-// Ícones SVG minimalistas nativos
+// Ícones SVG minimalistas
 const IconSearch = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
   </svg>
 )
 
-const IconFileText = () => (
+const IconReceipt = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
 
@@ -21,344 +23,350 @@ const IconWhatsApp = () => (
   </svg>
 )
 
-const IconFilter = () => (
+const IconEdit = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+  </svg>
+)
+
+const IconTrash = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
   </svg>
 )
 
 export default function HistoricoVendas() {
+  const { isAdmin } = useAuth()
   const [vendas, setVendas] = useState([])
+  const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
-
-  // Filtros
   const [busca, setBusca] = useState('')
-  const [atalhoPeriodo, setAtalhoPeriodo] = useState('mes') // 'hoje', '7dias', 'mes', 'custom'
-  const [dataInicio, setDataInicio] = useState('')
-  const [dataFim, setDataFim] = useState('')
-  const [filtroPagamento, setFiltroPagamento] = useState('todos')
+  const [filtroPagto, setFiltroPagto] = useState('todos')
 
-  // Aplica as datas conforme o atalho escolhido
-  useEffect(() => {
-    const hoje = new Date()
-    const hojeStr = hoje.toISOString().split('T')[0]
-
-    if (atalhoPeriodo === 'hoje') {
-      setDataInicio(hojeStr)
-      setDataFim(hojeStr)
-    } else if (atalhoPeriodo === '7dias') {
-      const seteAtras = new Date()
-      seteAtras.setDate(seteAtras.getDate() - 7)
-      setDataInicio(seteAtras.toISOString().split('T')[0])
-      setDataFim(hojeStr)
-    } else if (atalhoPeriodo === 'mes') {
-      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-      setDataInicio(primeiroDiaMes.toISOString().split('T')[0])
-      setDataFim(hojeStr)
-    }
-  }, [atalhoPeriodo])
+  // Modal de Edição de Venda
+  const [modalEditAberto, setModalEditAberto] = useState(false)
+  const [vendaEditando, setVendaEditando] = useState(null)
+  const [novoClienteId, setNovoClienteId] = useState('')
+  const [novaFormaPagto, setNovaFormaPagto] = useState('dinheiro')
+  const [novoTotal, setNovoTotal] = useState('')
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
 
   const carregarVendas = async () => {
     setLoading(true)
     try {
-      let query = supabase
+      const { data: vData, error } = await supabase
         .from('vendas')
-        .select('*, clientes(nome, telefone, saldo_cashback)')
-        .order('created_at', { ascending: false })
+        .select('*, clientes(id, nome, telefone, saldo_cashback)')
+        .order('id', { ascending: false })
 
-      // Filtro de Data no Supabase
-      if (dataInicio) {
-        const dIni = new Date(`${dataInicio}T00:00:00`)
-        query = query.gte('created_at', dIni.toISOString())
-      }
-      if (dataFim) {
-        const dFim = new Date(`${dataFim}T23:59:59`)
-        query = query.lte('created_at', dFim.toISOString())
-      }
+      const { data: cData } = await supabase.from('clientes').select('id, nome, telefone').order('nome')
 
-      // Filtro de Forma de Pagamento no Supabase
-      if (filtroPagamento !== 'todos') {
-        query = query.eq('forma_pagamento', filtroPagamento)
-      }
-
-      const { data, error } = await query
       if (error) throw error
-      if (data) setVendas(data)
+      if (vData) setVendas(vData)
+      if (cData) setClientes(cData)
     } catch (err) {
-      alert('Erro ao carregar histórico: ' + err.message)
+      alert('Erro ao carregar vendas: ' + err.message)
     }
     setLoading(false)
   }
 
-  // Recarrega sempre que mudar as datas ou a forma de pagamento
   useEffect(() => {
-    if (dataInicio && dataFim) {
-      carregarVendas()
-    }
-  }, [dataInicio, dataFim, filtroPagamento])
+    carregarVendas()
+  }, [])
 
-  const enviarWhatsApp = (venda) => {
-    const tel = venda.clientes?.telefone
-    if (!tel) return alert('Este cliente não possui telefone cadastrado!')
-
-    const numLimpo = tel.replace(/\D/g, '')
-    const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
-    const codFormatado = formatarIdVenda(venda.id)
-    const nome = venda.clientes?.nome || 'Cliente'
-
-    const mensagem = encodeURIComponent(
-      `Olá, ${nome}!\n` +
-      `Aqui está o comprovante da sua compra no *${DADOS_EMPRESA.nome}*:\n\n` +
-      `Pedido: *#${codFormatado}*\n` +
-      `Total: *R$ ${Number(venda.total).toFixed(2)}*\n` +
-      `Forma de Pagto: *${(venda.forma_pagamento || '').toUpperCase()}*\n\n` +
-      `Agradecemos pela preferência!`
-    )
-
-    window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
+  // Abrir Modal de Edição
+  const abrirEdicaoVenda = (venda) => {
+    setVendaEditando(venda)
+    setNovoClienteId(venda.cliente_id ? String(venda.cliente_id) : '')
+    setNovaFormaPagto(venda.forma_pagamento || 'dinheiro')
+    setNovoTotal(String(Number(venda.total || 0).toFixed(2)))
+    setModalEditAberto(true)
   }
 
-  // Filtro em memória pelo campo de busca livre (código, nome, telefone)
+  // Salvar Alterações da Venda
+  const salvarEdicaoVenda = async (e) => {
+    e.preventDefault()
+    if (!vendaEditando) return
+
+    const totalNum = parseFloat(String(novoTotal).replace(',', '.')) || 0
+    if (totalNum <= 0) return alert('Informe um valor de venda válido.')
+    if (novaFormaPagto === 'crediario' && !novoClienteId) {
+      return alert('Para venda em Crediário, é obrigatório selecionar o cliente!')
+    }
+
+    setSalvandoEdicao(true)
+    try {
+      const clienteIdFinal = novoClienteId ? parseInt(novoClienteId) : null
+
+      // 1. Atualiza os dados da venda
+      const { error: erroUpdate } = await supabase
+        .from('vendas')
+        .update({
+          total: totalNum,
+          forma_pagamento: novaFormaPagto,
+          cliente_id: clienteIdFinal
+        })
+        .eq('id', vendaEditando.id)
+
+      if (erroUpdate) throw erroUpdate
+
+      // 2. Ajusta Contas a Receber se envolver Crediário
+      const descricaoConta = `Venda #${vendaEditando.id}`
+      const { data: contaExistente } = await supabase
+        .from('contas_a_receber')
+        .select('*')
+        .ilike('descricao', `%Venda #${vendaEditando.id}%`)
+        .maybeSingle()
+
+      if (novaFormaPagto === 'crediario') {
+        const clienteObj = clientes.find(c => c.id === clienteIdFinal)
+        const descCompleta = `Venda #${vendaEditando.id} - ${clienteObj?.nome || 'Cliente'}`
+
+        if (contaExistente) {
+          // Atualiza o valor e o cliente
+          await supabase.from('contas_a_receber').update({
+            valor: totalNum,
+            cliente_id: clienteIdFinal,
+            descricao: descCompleta
+          }).eq('id', contaExistente.id)
+        } else {
+          // Cria o lançamento em contas a receber
+          const dataVenc = new Date()
+          dataVenc.setDate(dataVenc.getDate() + 30)
+
+          await supabase.from('contas_a_receber').insert([{
+            descricao: descCompleta,
+            valor: totalNum,
+            valor_pago: 0,
+            vencimento: dataVenc.toISOString().split('T')[0],
+            status: 'pendente',
+            cliente_id: clienteIdFinal
+          }])
+        }
+      } else {
+        // Se mudou de crediário para outra forma à vista, remove o débito pendente
+        if (contaExistente) {
+          await supabase.from('contas_a_receber').delete().eq('id', contaExistente.id)
+        }
+      }
+
+      alert('Venda atualizada com sucesso!')
+      setModalEditAberto(false)
+      setVendaEditando(null)
+      await carregarVendas()
+    } catch (err) {
+      alert('Erro ao atualizar venda: ' + err.message)
+    }
+    setSalvandoEdicao(false)
+  }
+
+  // Cancelar / Excluir Venda (com devolução ao estoque)
+  const excluirVenda = async (venda) => {
+    const cod = formatarIdVenda(venda.id)
+    if (!confirm(`Deseja realmente CANCELAR e estornar a venda #${cod}?\nAs peças serão devolvidas automaticamente ao estoque!`)) {
+      return
+    }
+
+    try {
+      // 1. Devolve peças ao estoque
+      const itens = Array.isArray(venda.itens) ? venda.itens : []
+      for (const item of itens) {
+        if (item.variacaoId) {
+          const { data: vVar } = await supabase.from('variacoes_grade').select('estoque').eq('id', item.variacaoId).single()
+          if (vVar) {
+            await supabase.from('variacoes_grade').update({ estoque: (vVar.estoque || 0) + item.quantidade }).eq('id', item.variacaoId)
+          }
+        }
+        if (item.produtoId) {
+          const { data: pProd } = await supabase.from('produtos').select('estoque').eq('id', item.produtoId).single()
+          if (pProd) {
+            await supabase.from('produtos').update({ estoque: (pProd.estoque || 0) + item.quantidade }).eq('id', item.produtoId)
+          }
+        }
+      }
+
+      // 2. Remove débito de contas a receber se houver
+      await supabase.from('contas_a_receber').delete().ilike('descricao', `%Venda #${venda.id}%`)
+
+      // 3. Exclui a venda
+      const { error } = await supabase.from('vendas').delete().eq('id', venda.id)
+      if (error) throw error
+
+      alert(`Venda #${cod} cancelada com sucesso e estoque estornado!`)
+      await carregarVendas()
+    } catch (err) {
+      alert('Erro ao cancelar venda: ' + err.message)
+    }
+  }
+
+  const enviarWhatsApp = (venda) => {
+    if (!venda.clientes?.telefone) return alert('Cliente sem telefone cadastrado!')
+    const numLimpo = venda.clientes.telefone.replace(/\D/g, '')
+    const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
+    const textoCupom = gerarTextoCupomWhatsApp(venda)
+    window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${encodeURIComponent(textoCupom)}`, '_blank')
+  }
+
   const vendasFiltradas = vendas.filter(v => {
-    if (!busca.trim()) return true
-    const termo = busca.toLowerCase()
-    const cod = formatarIdVenda(v.id).toLowerCase()
-    const nome = (v.clientes?.nome || '').toLowerCase()
-    const tel = (v.clientes?.telefone || '').toLowerCase()
-    return cod.includes(termo) || nome.includes(termo) || tel.includes(termo)
+    const cod = formatarIdVenda(v.id)
+    const nomeCli = (v.clientes?.nome || '').toLowerCase()
+    const telCli = (v.clientes?.telefone || '')
+    const t = busca.toLowerCase()
+    const bateTexto = cod.includes(t) || nomeCli.includes(t) || telCli.includes(t)
+
+    const batePagto = filtroPagto === 'todos' || v.forma_pagamento === filtroPagto
+    return bateTexto && batePagto
   })
 
-  // Estatísticas calculadas na hora com base no filtro atual
-  const totalFaturado = vendasFiltradas.reduce((s, v) => s + Number(v.total || 0), 0)
-  const qtdPedidos = vendasFiltradas.length
-  const ticketMedio = qtdPedidos > 0 ? (totalFaturado / qtdPedidos) : 0
-
   return (
-    <div className="hv-wrapper">
+    <div className="hist-wrapper">
       <style>{`
-        .hv-wrapper { width: 100%; max-width: 1200px; margin: 0 auto; }
-        .hv-header { margin-bottom: 1.5rem; }
-        .hv-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
-        .hv-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
+        .hist-wrapper { width: 100%; max-width: 1200px; margin: 0 auto; box-sizing: border-box; }
+        .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+        .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
+        .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
 
-        /* Cards de Métricas do Filtro */
-        .kpi-cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-        .kpi-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
-        .kpi-card-title { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
-        .kpi-card-value { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
-        
-        /* Bloco de Filtros */
-        .filter-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
-        .filter-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-        .atalhos-periodo { display: flex; gap: 6px; }
-        .btn-periodo { padding: 0.45rem 0.9rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
-        .btn-periodo.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
-
-        .filter-inputs-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-        .input-group { display: flex; flex-direction: column; }
-        .input-group label { font-size: 0.72rem; font-weight: 700; color: #64748b; margin-bottom: 4px; text-transform: uppercase; }
-        .input-date, .select-pagto { height: 38px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.85rem; color: #0f172a; background: #ffffff; }
+        .controls-bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .filter-pills { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+        .pill-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .pill-btn.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
         .search-box { display: flex; align-items: center; gap: 8px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 12px; height: 38px; width: 280px; }
         .search-box input { border: none; outline: none; width: 100%; font-size: 0.85rem; color: #0f172a; background: transparent; }
-        
-        /* Tabela */
-        .table-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.02); width: 100%; }
-        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 820px; }
-        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1.25rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
-        td { padding: 1rem 1.25rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; white-space: nowrap; }
+
+        .table-responsive { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 760px; }
+        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+        td { padding: 0.85rem 1rem; font-size: 0.88rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         tbody tr:hover { background: #f8fafc; }
-        
-        .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-        .badge-info { background: #e0f2fe; color: #0369a1; }
-        .badge-warning { background: #fef3c7; color: #b45309; }
-        .badge-success { background: #dcfce7; color: #15803d; }
-        
-        .btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 0.45rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: #ffffff; }
-        .btn-action:hover { background: #1d4ed8; }
-        .btn-sec { background: #f1f5f9; color: #475569; }
-        .btn-sec:hover { background: #e2e8f0; color: #0f172a; }
-        .btn-zap { background: #dcfce7; color: #15803d; }
-        .btn-zap:hover { background: #bbf7d0; }
+
+        .badge-forma { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+        .badge-dinheiro { background: #dcfce7; color: #15803d; }
+        .badge-pix { background: #e0f2fe; color: #0369a1; }
+        .badge-cartao { background: #f1f5f9; color: #334155; }
+        .badge-crediario { background: #fef3c7; color: #b45309; }
+        .badge-misto { background: #fae8ff; color: #86198f; }
+
+        .btn-act { padding: 0.4rem 0.65rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #334155; font-size: 0.78rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+        .btn-act:hover { background: #f1f5f9; }
+        .btn-act-zap { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+        .btn-act-zap:hover { background: #bbf7d0; }
+        .btn-act-danger { color: #dc2626; border-color: #fecaca; }
+        .btn-act-danger:hover { background: #fef2f2; }
+
+        /* Modal Edição */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
+        .modal-card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem; }
+        .form-group-modal { display: flex; flex-direction: column; margin-bottom: 1rem; }
+        .form-group-modal label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
+        .form-group-modal input, .form-group-modal select { height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.95rem; color: #0f172a; }
 
         @media (max-width: 768px) {
-          .kpi-cards-grid { grid-template-columns: 1fr; gap: 0.75rem; }
-          .filter-inputs-row { flex-direction: column; align-items: stretch; }
+          .controls-bar { flex-direction: column; align-items: stretch; }
           .search-box { width: 100%; }
         }
       `}</style>
 
-      <div className="hv-header">
-        <h1 className="hv-title">Vendas Realizadas</h1>
-        <p className="hv-subtitle">Histórico consolidado com busca por cliente, período e forma de pagamento</p>
-      </div>
-
-      {/* Cards de Métricas em Tempo Real */}
-      <div className="kpi-cards-grid">
-        <div className="kpi-card">
-          <span className="kpi-card-title">Faturamento no Período</span>
-          <span className="kpi-card-value" style={{ color: '#2563eb' }}>R$ {totalFaturado.toFixed(2)}</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-card-title">Volume de Pedidos</span>
-          <span className="kpi-card-value">{qtdPedidos} vendas</span>
-        </div>
-        <div className="kpi-card">
-          <span className="kpi-card-title">Ticket Médio</span>
-          <span className="kpi-card-value" style={{ color: '#059669' }}>R$ {ticketMedio.toFixed(2)}</span>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Histórico de Vendas</h1>
+          <p className="page-subtitle">Consulte, reimprima comprovantes, edite formas de pagamento ou estorne pedidos</p>
         </div>
       </div>
 
-      {/* Bloco Avançado de Filtros */}
-      <div className="filter-container">
-        <div className="filter-row">
-          <div className="atalhos-periodo">
-            <button 
-              className={`btn-periodo ${atalhoPeriodo === 'hoje' ? 'active' : ''}`}
-              onClick={() => setAtalhoPeriodo('hoje')}
-            >
-              Hoje
-            </button>
-            <button 
-              className={`btn-periodo ${atalhoPeriodo === '7dias' ? 'active' : ''}`}
-              onClick={() => setAtalhoPeriodo('7dias')}
-            >
-              Últimos 7 dias
-            </button>
-            <button 
-              className={`btn-periodo ${atalhoPeriodo === 'mes' ? 'active' : ''}`}
-              onClick={() => setAtalhoPeriodo('mes')}
-            >
-              Mês Atual
-            </button>
-            <button 
-              className={`btn-periodo ${atalhoPeriodo === 'custom' ? 'active' : ''}`}
-              onClick={() => setAtalhoPeriodo('custom')}
-            >
-              Personalizado
-            </button>
-          </div>
-
-          <div className="search-box">
-            <IconSearch />
-            <input 
-              type="text" 
-              placeholder="Buscar código, cliente ou WhatsApp..." 
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-            />
-            {busca && (
-              <button 
-                onClick={() => setBusca('')} 
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', fontSize: '13px' }}
-              >
-                ✕
-              </button>
-            )}
-          </div>
+      <div className="controls-bar">
+        <div className="filter-pills">
+          <button className={`pill-btn ${filtroPagto === 'todos' ? 'active' : ''}`} onClick={() => setFiltroPagto('todos')}>Todas</button>
+          <button className={`pill-btn ${filtroPagto === 'pix' ? 'active' : ''}`} onClick={() => setFiltroPagto('pix')}>PIX</button>
+          <button className={`pill-btn ${filtroPagto === 'dinheiro' ? 'active' : ''}`} onClick={() => setFiltroPagto('dinheiro')}>Dinheiro</button>
+          <button className={`pill-btn ${filtroPagto === 'credito' ? 'active' : ''}`} onClick={() => setFiltroPagto('credito')}>Crédito</button>
+          <button className={`pill-btn ${filtroPagto === 'debito' ? 'active' : ''}`} onClick={() => setFiltroPagto('debito')}>Débito</button>
+          <button className={`pill-btn ${filtroPagto === 'crediario' ? 'active' : ''}`} onClick={() => setFiltroPagto('crediario')}>Crediário</button>
+          <button className={`pill-btn ${filtroPagto === 'misto' ? 'active' : ''}`} onClick={() => setFiltroPagto('misto')}>Misto</button>
         </div>
 
-        {/* Linha de seleção de datas e forma de pagamento */}
-        <div className="filter-inputs-row">
-          <div className="input-group">
-            <label>Data Início</label>
-            <input 
-              type="date" 
-              className="input-date"
-              value={dataInicio} 
-              onChange={e => { setDataInicio(e.target.value); setAtalhoPeriodo('custom'); }} 
-            />
-          </div>
-
-          <div className="input-group">
-            <label>Data Fim</label>
-            <input 
-              type="date" 
-              className="input-date"
-              value={dataFim} 
-              onChange={e => { setDataFim(e.target.value); setAtalhoPeriodo('custom'); }} 
-            />
-          </div>
-
-          <div className="input-group" style={{ minWidth: '180px' }}>
-            <label>Forma de Pagamento</label>
-            <select 
-              className="select-pagto"
-              value={filtroPagamento} 
-              onChange={e => setFiltroPagamento(e.target.value)}
-            >
-              <option value="todos">Todas as Formas</option>
-              <option value="dinheiro">Dinheiro</option>
-              <option value="pix">PIX</option>
-              <option value="debito">Cartão de Débito</option>
-              <option value="credito">Cartão de Crédito</option>
-              <option value="crediario">Crediário (A Prazo)</option>
-            </select>
-          </div>
+        <div className="search-box">
+          <IconSearch />
+          <input 
+            type="text" 
+            placeholder="Buscar por #pedido ou cliente..." 
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+          />
+          {busca && <button onClick={() => setBusca('')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8' }}>✕</button>}
         </div>
       </div>
 
-      {/* Tabela do Histórico */}
-      <div className="table-box">
+      <div className="table-responsive">
         {loading ? (
-          <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Carregando dados das vendas...</p>
+          <p style={{ padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>Carregando histórico de vendas...</p>
         ) : vendasFiltradas.length === 0 ? (
-          <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-            Nenhuma venda encontrada com os filtros selecionados.
-          </p>
+          <p style={{ padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>Nenhuma venda encontrada.</p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Código ID</th>
+                <th>Código</th>
                 <th>Data & Hora</th>
                 <th>Cliente</th>
-                <th>Total Pago</th>
-                <th>Forma de Pagto</th>
+                <th>Itens</th>
+                <th>Pagamento</th>
+                <th>Total</th>
                 <th style={{ textAlign: 'center' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {vendasFiltradas.map(venda => {
-                const cod = formatarIdVenda(venda.id)
-                const isCrediario = venda.forma_pagamento === 'crediario'
-                const isPix = venda.forma_pagamento === 'pix'
-                const temTelefone = Boolean(venda.clientes?.telefone)
+              {vendasFiltradas.map(v => {
+                const cod = formatarIdVenda(v.id)
+                const dataFormatada = new Date(v.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                const itens = Array.isArray(v.itens) ? v.itens : []
+                const totalPecas = itens.reduce((s, i) => s + Number(i.quantidade || 1), 0)
 
-                let badgeClass = 'badge-info'
-                if (isCrediario) badgeClass = 'badge-warning'
-                else if (isPix) badgeClass = 'badge-success'
+                let classeBadge = 'badge-cartao'
+                if (v.forma_pagamento === 'dinheiro') classeBadge = 'badge-dinheiro'
+                else if (v.forma_pagamento === 'pix') classeBadge = 'badge-pix'
+                else if (v.forma_pagamento === 'crediario') classeBadge = 'badge-crediario'
+                else if (v.forma_pagamento === 'misto') classeBadge = 'badge-misto'
 
                 return (
-                  <tr key={venda.id}>
+                  <tr key={v.id}>
                     <td><strong>#{cod}</strong></td>
-                    <td>{new Date(venda.created_at).toLocaleString('pt-BR')}</td>
+                    <td>{dataFormatada}</td>
                     <td>
-                      <div><strong>{venda.clientes?.nome || 'Cliente Avulso'}</strong></div>
-                      {temTelefone && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{venda.clientes.telefone}</span>}
+                      <div><strong>{v.clientes?.nome || 'Cliente Avulso'}</strong></div>
+                      {v.clientes?.telefone && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{v.clientes.telefone}</span>}
                     </td>
-                    <td><strong>R$ {Number(venda.total).toFixed(2)}</strong></td>
+                    <td>{totalPecas} un</td>
                     <td>
-                      <span className={`badge ${badgeClass}`}>
-                        {venda.forma_pagamento?.toUpperCase()}
+                      <span className={`badge-forma ${classeBadge}`}>
+                        {v.forma_pagamento || 'dinheiro'}
                       </span>
                     </td>
+                    <td><strong>R$ {Number(v.total || 0).toFixed(2)}</strong></td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button 
-                          className="btn-action btn-sec" 
-                          onClick={() => gerarComprovanteVenda(venda)}
-                          title="Abrir comprovante em nova aba"
-                        >
-                          <IconFileText /> PDF
+                        {/* Reimpressão Térmica */}
+                        <button className="btn-act" onClick={() => gerarComprovanteVenda(v)} title="Imprimir Comprovante">
+                          <IconReceipt /> Recibo
                         </button>
-                        {temTelefone && (
-                          <button 
-                            className="btn-action btn-zap" 
-                            onClick={() => enviarWhatsApp(venda)}
-                            title="Reenviar pelo WhatsApp"
-                          >
+
+                        {/* WhatsApp */}
+                        {v.clientes?.telefone && (
+                          <button className="btn-act btn-act-zap" onClick={() => enviarWhatsApp(v)} title="Enviar no WhatsApp">
                             <IconWhatsApp /> Zap
+                          </button>
+                        )}
+
+                        {/* Editar Venda */}
+                        <button className="btn-act" onClick={() => abrirEdicaoVenda(v)} title="Editar Forma de Pagamento ou Cliente">
+                          <IconEdit /> Editar
+                        </button>
+
+                        {/* Cancelar Venda (Admin) */}
+                        {isAdmin && (
+                          <button className="btn-act btn-act-danger" onClick={() => excluirVenda(v)} title="Cancelar e Estornar Venda">
+                            <IconTrash />
                           </button>
                         )}
                       </div>
@@ -370,6 +378,67 @@ export default function HistoricoVendas() {
           </table>
         )}
       </div>
+
+      {/* MODAL DE EDIÇÃO DE VENDA */}
+      {modalEditAberto && vendaEditando && (
+        <div className="modal-overlay" onClick={() => setModalEditAberto(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ fontSize: '1.15rem', color: '#0f172a' }}>Editar Venda #{formatarIdVenda(vendaEditando.id)}</h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Altere a forma de pagamento, valor ou cliente associado</span>
+              </div>
+              <button onClick={() => setModalEditAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={salvarEdicaoVenda}>
+              <div className="form-group-modal">
+                <label>Cliente Associado</label>
+                <select value={novoClienteId} onChange={e => setNovoClienteId(e.target.value)}>
+                  <option value="">Cliente Avulso (Sem cadastro)</option>
+                  {clientes.map(c => (
+                    <option key={c.id} value={c.id}>{c.nome} {c.telefone ? `(${c.telefone})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group-modal">
+                <label>Forma de Pagamento</label>
+                <select value={novaFormaPagto} onChange={e => setNovaFormaPagto(e.target.value)}>
+                  <option value="dinheiro">Dinheiro (À Vista)</option>
+                  <option value="pix">PIX (À Vista)</option>
+                  <option value="debito">Cartão de Débito</option>
+                  <option value="credito">Cartão de Crédito</option>
+                  <option value="crediario">Crediário (A Prazo / Caderno)</option>
+                  <option value="misto">Misto (Dividido)</option>
+                </select>
+              </div>
+
+              <div className="form-group-modal">
+                <label>Valor Total Cobrado (R$)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  value={novoTotal} 
+                  onChange={e => setNovoTotal(e.target.value)} 
+                  required 
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1.25rem' }}>
+                <button type="button" className="btn-act" onClick={() => setModalEditAberto(false)}>Cancelar</button>
+                <button 
+                  type="submit" 
+                  disabled={salvandoEdicao}
+                  style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '0.65rem 1.25rem', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {salvandoEdicao ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
