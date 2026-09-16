@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, gerarTextoCupomWhatsApp, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
-// Ícones SVG minimalistas nativos
 const IconStore = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
@@ -35,7 +34,7 @@ const IconCheck = () => (
 
 const IconReceipt = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
 
@@ -56,10 +55,10 @@ export default function Vendas() {
   const [produtos, setProdutos] = useState([])
   const [variacoes, setVariacoes] = useState([])
   const [clientes, setClientes] = useState([])
-  const [taxaCashback, setTaxaCashback] = useState(5)
+  const [taxaCashback, setTaxaCashback] = useState(0)
+  const [diasValidadeCashback, setDiasValidadeCashback] = useState(30)
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
-  // Busca Inteligente de Clientes
   const [clienteSelecionado, setClienteSelecionado] = useState('')
   const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
   const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false)
@@ -70,22 +69,18 @@ export default function Vendas() {
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
   const [valorEntrada, setValorEntrada] = useState('')
   
-  // Pagamento Misto
   const [linhasMisto, setLinhasMisto] = useState([])
   const [tipoMistoAdd, setTipoMistoAdd] = useState('pix')
   const [valorMistoAdd, setValorMistoAdd] = useState('')
 
-  // Busca Inteligente de Produtos
   const [termoBuscaProduto, setTermoBuscaProduto] = useState('')
   const [produtoSelecionadoObj, setProdutoSelecionadoObj] = useState(null)
   const [mostrarDropdownBusca, setMostrarDropdownBusca] = useState(false)
   const dropdownRef = useRef(null)
 
-  // Modal Escolha de Variação
   const [modalEscolhaVarAberto, setModalEscolhaVarAberto] = useState(false)
   const [prodParaEscolherVar, setProdParaEscolherVar] = useState(null)
 
-  // Câmera
   const [modalCameraAberto, setModalCameraAberto] = useState(false)
   const [html5QrCodeScanner, setHtml5QrCodeScanner] = useState(null)
 
@@ -94,7 +89,6 @@ export default function Vendas() {
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // Fechamento de Caixa
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [vendasDoDia, setVendasDoDia] = useState([])
   const [carregandoCaixa, setCarregandoCaixa] = useState(false)
@@ -112,7 +106,13 @@ export default function Vendas() {
     if (cfgData) {
       const mapa = {}
       cfgData.forEach(c => { mapa[c.chave] = c.valor })
-      setTaxaCashback(parseFloat(mapa['cashback_percentual']) || 5)
+      
+      const taxaParsed = parseFloat(mapa['cashback_percentual'])
+      setTaxaCashback(!isNaN(taxaParsed) ? taxaParsed : 0)
+
+      const diasParsed = parseInt(mapa['cashback_dias_validade'])
+      setDiasValidadeCashback(!isNaN(diasParsed) ? diasParsed : 30)
+
       setDadosEmpresa({
         nome: mapa['empresa_nome'],
         documento: mapa['empresa_documento'],
@@ -129,7 +129,6 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
-  // Fechar dropdowns ao clicar fora
   useEffect(() => {
     const handleClickFora = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -143,7 +142,6 @@ export default function Vendas() {
     return () => document.removeEventListener('mousedown', handleClickFora)
   }, [])
 
-  // Filtro de Clientes por Nome / Telefone / CPF
   const clientesFiltradosBusca = clientes.filter(c => {
     if (!termoBuscaCliente) return true
     const t = termoBuscaCliente.toLowerCase()
@@ -166,7 +164,6 @@ export default function Vendas() {
     setMostrarDropdownCliente(false)
   }
 
-  // Filtro de Produtos
   const produtosFiltradosBusca = produtos.filter(p => {
     if (!termoBuscaProduto) return true
     const t = termoBuscaProduto.toLowerCase()
@@ -269,7 +266,6 @@ export default function Vendas() {
     }
   }
 
-  // Câmera do Celular
   const abrirScannerCamera = async () => {
     setModalCameraAberto(true)
     if (!window.Html5Qrcode) {
@@ -347,9 +343,8 @@ export default function Vendas() {
   const descontoManual = parseFloat(desconto) || 0
   const valorAbatidoCashback = usarCashback ? Math.min(subtotal - descontoManual, saldoCashbackDisponivel) : 0
   const totalComDesconto = Math.max(0, subtotal - descontoManual - valorAbatidoCashback)
-  const novoCashbackGerado = totalComDesconto * (taxaCashback / 100)
+  const novoCashbackGerado = taxaCashback > 0 ? totalComDesconto * (taxaCashback / 100) : 0
 
-  // Pagamento Misto
   const totalPagoMisto = linhasMisto.reduce((s, l) => s + Number(l.valor || 0), 0)
   const restanteMisto = Math.max(0, totalComDesconto - totalPagoMisto)
 
@@ -368,13 +363,11 @@ export default function Vendas() {
     setLinhasMisto(linhasMisto.filter(l => l.id !== id))
   }
 
-  // Troco / Entrada
   const numValorRecebido = parseFloat(valorRecebido) || 0
   const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto ? numValorRecebido - totalComDesconto : 0
   const numValorEntrada = parseFloat(valorEntrada) || 0
   const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
-  // Resumo do Fechamento de Caixa
   const abrirFechamentoCaixa = async () => {
     setCarregandoCaixa(true)
     setModalCaixaAberto(true)
@@ -438,7 +431,6 @@ export default function Vendas() {
     setItensVenda(itensVenda.filter(item => item.id !== id))
   }
 
-  // FINALIZAR VENDA
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) return alert('Adicione produtos à venda.')
     
@@ -477,7 +469,6 @@ export default function Vendas() {
 
       if (erroVenda) throw erroVenda
 
-      // Cashback
       let saldoFinalCliente = saldoCashbackDisponivel
       if (clienteId) {
         if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
@@ -485,7 +476,6 @@ export default function Vendas() {
         await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
       }
 
-      // Crediário
       if (formaPagamento === 'crediario') {
         const dataVencimento = new Date()
         dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -515,7 +505,6 @@ export default function Vendas() {
         }
       }
 
-      // Baixa no Estoque
       for (const item of itensVenda) {
         if (item.variacaoId) {
           const v = variacoes.find(x => x.id === item.variacaoId)
@@ -574,14 +563,12 @@ export default function Vendas() {
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
 
-        /* Dropdowns de Busca Inteligente */
         .busca-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 260px; overflow-y: auto; z-index: 50; }
         .busca-item { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .busca-item:hover { background: #eff6ff; }
         .busca-item-title { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
         .busca-item-sub { font-size: 0.75rem; color: #64748b; }
 
-        /* Bloco Misto */
         .misto-container { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
         .misto-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .misto-title { font-size: 0.78rem; font-weight: 800; color: #334155; text-transform: uppercase; }
@@ -653,8 +640,6 @@ export default function Vendas() {
         <div className="form-section">
           <h2>Dados da Venda</h2>
           <div className="form-row">
-            
-            {/* CAMPO DE BUSCA INTELIGENTE DE CLIENTES (COM AUTOCOMPLETE) */}
             <div className="form-group" style={{ flex: 2 }} ref={dropdownClienteRef}>
               <label>Cliente (Buscar por Nome, Telefone ou CPF)</label>
               <div style={{ display: 'flex', gap: '6px' }}>
@@ -675,7 +660,7 @@ export default function Vendas() {
                     type="button" 
                     onClick={() => selecionarCliente(null)} 
                     style={{ border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', color: '#64748b' }}
-                    title="Remover cliente (deixar avulso)"
+                    title="Remover cliente"
                   >
                     ✕
                   </button>
@@ -750,7 +735,6 @@ export default function Vendas() {
             )}
           </div>
 
-          {/* PAINEL DINÂMICO DE PAGAMENTO MISTO */}
           {formaPagamento === 'misto' && (
             <div className="misto-container">
               <div className="misto-header">
@@ -949,9 +933,12 @@ export default function Vendas() {
                 </div>
               )}
 
+              {/* Só exibe o bônus se a taxa configurada for MAIOR que zero */}
               {clienteAtual && taxaCashback > 0 && (
                 <div style={{ background: '#f0fdf4', padding: '8px 14px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
-                  <span style={{ fontSize: '11px', color: '#15803d', display: 'block', fontWeight: 600 }}>NOVO CASHBACK ({taxaCashback}%):</span>
+                  <span style={{ fontSize: '11px', color: '#15803d', display: 'block', fontWeight: 600 }}>
+                    NOVO CASHBACK ({taxaCashback}% - Validade {diasValidadeCashback}d):
+                  </span>
                   <strong style={{ fontSize: '1.1rem', color: '#16a34a' }}>+ R$ {novoCashbackGerado.toFixed(2)}</strong>
                 </div>
               )}
@@ -996,7 +983,6 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* MODAL ESCOLHA DE TAMANHO / COR */}
       {modalEscolhaVarAberto && prodParaEscolherVar && (
         <div className="modal-overlay" onClick={() => setModalEscolhaVarAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -1034,7 +1020,6 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* Modal Câmera */}
       {modalCameraAberto && (
         <div className="modal-camera-overlay">
           <div className="modal-camera-box">
@@ -1048,7 +1033,6 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* Modal Caixa */}
       {modalCaixaAberto && (
         <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
