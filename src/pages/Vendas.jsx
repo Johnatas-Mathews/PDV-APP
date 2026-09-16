@@ -35,7 +35,7 @@ const IconCheck = () => (
 
 const IconReceipt = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17V7" />
   </svg>
 )
 
@@ -59,7 +59,12 @@ export default function Vendas() {
   const [taxaCashback, setTaxaCashback] = useState(5)
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
+  // Busca Inteligente de Clientes
   const [clienteSelecionado, setClienteSelecionado] = useState('')
+  const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
+  const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false)
+  const dropdownClienteRef = useRef(null)
+
   const [quantidade, setQuantidade] = useState('1')
   const [itensVenda, setItensVenda] = useState([])
   const [formaPagamento, setFormaPagamento] = useState('dinheiro')
@@ -70,7 +75,7 @@ export default function Vendas() {
   const [tipoMistoAdd, setTipoMistoAdd] = useState('pix')
   const [valorMistoAdd, setValorMistoAdd] = useState('')
 
-  // Busca inteligente
+  // Busca Inteligente de Produtos
   const [termoBuscaProduto, setTermoBuscaProduto] = useState('')
   const [produtoSelecionadoObj, setProdutoSelecionadoObj] = useState(null)
   const [mostrarDropdownBusca, setMostrarDropdownBusca] = useState(false)
@@ -124,16 +129,44 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
+  // Fechar dropdowns ao clicar fora
   useEffect(() => {
     const handleClickFora = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setMostrarDropdownBusca(false)
+      }
+      if (dropdownClienteRef.current && !dropdownClienteRef.current.contains(e.target)) {
+        setMostrarDropdownCliente(false)
       }
     }
     document.addEventListener('mousedown', handleClickFora)
     return () => document.removeEventListener('mousedown', handleClickFora)
   }, [])
 
+  // Filtro de Clientes por Nome / Telefone / CPF
+  const clientesFiltradosBusca = clientes.filter(c => {
+    if (!termoBuscaCliente) return true
+    const t = termoBuscaCliente.toLowerCase()
+    return (
+      (c.nome && c.nome.toLowerCase().includes(t)) ||
+      (c.telefone && c.telefone.includes(t)) ||
+      (c.cpf && c.cpf.includes(t))
+    )
+  }).slice(0, 8)
+
+  const selecionarCliente = (c) => {
+    if (!c) {
+      setClienteSelecionado('')
+      setTermoBuscaCliente('')
+    } else {
+      setClienteSelecionado(String(c.id))
+      setTermoBuscaCliente(c.nome)
+    }
+    setUsarCashback(false)
+    setMostrarDropdownCliente(false)
+  }
+
+  // Filtro de Produtos
   const produtosFiltradosBusca = produtos.filter(p => {
     if (!termoBuscaProduto) return true
     const t = termoBuscaProduto.toLowerCase()
@@ -316,7 +349,7 @@ export default function Vendas() {
   const totalComDesconto = Math.max(0, subtotal - descontoManual - valorAbatidoCashback)
   const novoCashbackGerado = totalComDesconto * (taxaCashback / 100)
 
-  // Lógica Pagamento Misto
+  // Pagamento Misto
   const totalPagoMisto = linhasMisto.reduce((s, l) => s + Number(l.valor || 0), 0)
   const restanteMisto = Math.max(0, totalComDesconto - totalPagoMisto)
 
@@ -341,7 +374,7 @@ export default function Vendas() {
   const numValorEntrada = parseFloat(valorEntrada) || 0
   const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
-  // Resumo do Fechamento de Caixa com Suporte a Pagamento Misto
+  // Resumo do Fechamento de Caixa
   const abrirFechamentoCaixa = async () => {
     setCarregandoCaixa(true)
     setModalCaixaAberto(true)
@@ -409,7 +442,6 @@ export default function Vendas() {
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) return alert('Adicione produtos à venda.')
     
-    // Validações do Misto
     if (formaPagamento === 'misto') {
       if (Math.abs(totalPagoMisto - totalComDesconto) > 0.01) {
         return alert(`O valor total das formas de pagamento (R$ ${totalPagoMisto.toFixed(2)}) deve ser exatamente igual ao total da venda (R$ ${totalComDesconto.toFixed(2)})!`)
@@ -445,7 +477,7 @@ export default function Vendas() {
 
       if (erroVenda) throw erroVenda
 
-      // Saldo Cashback
+      // Cashback
       let saldoFinalCliente = saldoCashbackDisponivel
       if (clienteId) {
         if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
@@ -453,7 +485,7 @@ export default function Vendas() {
         await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
       }
 
-      // Lançamento em Contas a Receber (Crediário Normal ou Parcela do Misto)
+      // Crediário
       if (formaPagamento === 'crediario') {
         const dataVencimento = new Date()
         dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -511,6 +543,7 @@ export default function Vendas() {
 
       setItensVenda([])
       setClienteSelecionado('')
+      setTermoBuscaCliente('')
       setFormaPagamento('dinheiro')
       setValorEntrada('')
       setLinhasMisto([])
@@ -541,17 +574,18 @@ export default function Vendas() {
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
 
-        /* Bloco de Pagamento Misto */
-        .misto-container { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
-        .misto-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .misto-title { font-size: 0.78rem; font-weight: 800; color: #334155; text-transform: uppercase; }
-        .misto-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px; font-size: 0.88rem; }
-        
+        /* Dropdowns de Busca Inteligente */
         .busca-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 260px; overflow-y: auto; z-index: 50; }
         .busca-item { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .busca-item:hover { background: #eff6ff; }
         .busca-item-title { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
         .busca-item-sub { font-size: 0.75rem; color: #64748b; }
+
+        /* Bloco Misto */
+        .misto-container { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+        .misto-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .misto-title { font-size: 0.78rem; font-weight: 800; color: #334155; text-transform: uppercase; }
+        .misto-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px; font-size: 0.88rem; }
 
         .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; }
         .btn-primary { background: #2563eb; color: #ffffff; }
@@ -619,16 +653,73 @@ export default function Vendas() {
         <div className="form-section">
           <h2>Dados da Venda</h2>
           <div className="form-row">
-            <div className="form-group" style={{ flex: 2 }}>
-              <label>Cliente</label>
-              <select value={clienteSelecionado} onChange={(e) => { setClienteSelecionado(e.target.value); setUsarCashback(false); }}>
-                <option value="">Cliente Avulso (Não identificado)</option>
-                {clientes.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome} {c.saldo_cashback > 0 ? `(Cashback: R$ ${Number(c.saldo_cashback).toFixed(2)})` : ''}
-                  </option>
-                ))}
-              </select>
+            
+            {/* CAMPO DE BUSCA INTELIGENTE DE CLIENTES (COM AUTOCOMPLETE) */}
+            <div className="form-group" style={{ flex: 2 }} ref={dropdownClienteRef}>
+              <label>Cliente (Buscar por Nome, Telefone ou CPF)</label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input 
+                  type="text" 
+                  placeholder="Digite o nome do cliente ou deixe em branco..." 
+                  value={termoBuscaCliente}
+                  onChange={e => {
+                    setTermoBuscaCliente(e.target.value)
+                    setMostrarDropdownCliente(true)
+                    if (!e.target.value) setClienteSelecionado('')
+                  }}
+                  onFocus={() => setMostrarDropdownCliente(true)}
+                  style={{ width: '100%' }}
+                />
+                {clienteSelecionado && (
+                  <button 
+                    type="button" 
+                    onClick={() => selecionarCliente(null)} 
+                    style={{ border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', color: '#64748b' }}
+                    title="Remover cliente (deixar avulso)"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {mostrarDropdownCliente && (
+                <div className="busca-dropdown">
+                  <div 
+                    className="busca-item" 
+                    onClick={() => selecionarCliente(null)}
+                    style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}
+                  >
+                    <div>
+                      <div className="busca-item-title">👤 Cliente Avulso (Não identificado)</div>
+                      <div className="busca-item-sub">Venda sem cadastro prévio</div>
+                    </div>
+                  </div>
+                  {clientesFiltradosBusca.map(c => (
+                    <div 
+                      key={c.id} 
+                      className="busca-item"
+                      onClick={() => selecionarCliente(c)}
+                    >
+                      <div>
+                        <div className="busca-item-title">{c.nome}</div>
+                        <div className="busca-item-sub">
+                          {c.telefone ? `Tel: ${c.telefone}` : 'Sem telefone'} {c.cpf ? `• CPF: ${c.cpf}` : ''}
+                        </div>
+                      </div>
+                      {c.saldo_cashback > 0 && (
+                        <strong style={{ color: '#ca8a04', fontSize: '0.8rem' }}>
+                          Cashback: R$ {Number(c.saldo_cashback).toFixed(2)}
+                        </strong>
+                      )}
+                    </div>
+                  ))}
+                  {clientesFiltradosBusca.length === 0 && (
+                    <div style={{ padding: '12px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
+                      Nenhum cliente com este nome ou telefone.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="form-group" style={{ flex: 1.5 }}>
@@ -669,7 +760,6 @@ export default function Vendas() {
                 </span>
               </div>
 
-              {/* Linhas adicionadas */}
               {linhasMisto.map(linha => (
                 <div key={linha.id} className="misto-item">
                   <span>Forma: <strong>{linha.tipo.toUpperCase()}</strong></span>
@@ -682,7 +772,6 @@ export default function Vendas() {
                 </div>
               ))}
 
-              {/* Input para adicionar nova forma no misto */}
               {restanteMisto > 0.001 && (
                 <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                   <select 
@@ -907,7 +996,7 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* MODAL ESCOLHA DE TAMANHO / COR NO PDV */}
+      {/* MODAL ESCOLHA DE TAMANHO / COR */}
       {modalEscolhaVarAberto && prodParaEscolherVar && (
         <div className="modal-overlay" onClick={() => setModalEscolhaVarAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
