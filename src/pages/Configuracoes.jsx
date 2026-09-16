@@ -19,7 +19,6 @@ const IconTrash = () => (
   </svg>
 )
 
-// Catálogo de Módulos para Concessão de Permissões
 const MODULOS_DISPONIVEIS = [
   { chave: 'pdv', label: '🛒 PDV (Frente de Caixa)' },
   { chave: 'vendas', label: '📋 Histórico de Vendas' },
@@ -35,7 +34,6 @@ const MODULOS_DISPONIVEIS = [
 ]
 
 export default function Configuracoes() {
-  // Configurações Gerais
   const [empresaNome, setEmpresaNome] = useState('')
   const [empresaDocumento, setEmpresaDocumento] = useState('')
   const [empresaTelefone, setEmpresaTelefone] = useState('')
@@ -43,10 +41,10 @@ export default function Configuracoes() {
   const [empresaCidadeUf, setEmpresaCidadeUf] = useState('')
   const [empresaInstagram, setEmpresaInstagram] = useState('')
   const [empresaMensagemCupom, setEmpresaMensagemCupom] = useState('')
-  const [cashbackPercentual, setCashbackPercentual] = useState('5')
+  const [cashbackPercentual, setCashbackPercentual] = useState('0')
+  const [cashbackDiasValidade, setCashbackDiasValidade] = useState('30')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
 
-  // Gerenciamento de Operadores
   const [usuarios, setUsuarios] = useState([])
   const [idEditandoUsuario, setIdEditandoUsuario] = useState(null)
   const [nomeUsuario, setNomeUsuario] = useState('')
@@ -68,7 +66,8 @@ export default function Configuracoes() {
       setEmpresaCidadeUf(mapa['empresa_cidade_uf'] || '')
       setEmpresaInstagram(mapa['empresa_instagram'] || '')
       setEmpresaMensagemCupom(mapa['empresa_mensagem_cupom'] || 'Obrigado pela preferência! Volte sempre.')
-      setCashbackPercentual(mapa['cashback_percentual'] || '5')
+      setCashbackPercentual(mapa['cashback_percentual'] !== undefined ? String(mapa['cashback_percentual']) : '0')
+      setCashbackDiasValidade(mapa['cashback_dias_validade'] !== undefined ? String(mapa['cashback_dias_validade']) : '30')
     }
 
     const { data: uData } = await supabase.from('usuarios_loja').select('*').order('id')
@@ -91,7 +90,8 @@ export default function Configuracoes() {
       { chave: 'empresa_cidade_uf', valor: empresaCidadeUf.trim() },
       { chave: 'empresa_instagram', valor: empresaInstagram.trim() },
       { chave: 'empresa_mensagem_cupom', valor: empresaMensagemCupom.trim() },
-      { chave: 'cashback_percentual', valor: cashbackPercentual }
+      { chave: 'cashback_percentual', valor: cashbackPercentual === '' ? '0' : String(cashbackPercentual) },
+      { chave: 'cashback_dias_validade', valor: cashbackDiasValidade === '' ? '30' : String(cashbackDiasValidade) }
     ]
 
     try {
@@ -142,7 +142,6 @@ export default function Configuracoes() {
 
     setSalvandoUsuario(true)
     try {
-      // Se for admin, concede acesso a todos os módulos
       const permsFinais = perfilUsuario === 'admin' 
         ? MODULOS_DISPONIVEIS.map(m => m.chave)
         : permissoesUsuario
@@ -159,19 +158,12 @@ export default function Configuracoes() {
       }
 
       if (idEditandoUsuario) {
-        const { error } = await supabase
-          .from('usuarios_loja')
-          .update(payload)
-          .eq('id', idEditandoUsuario)
-
+        const { error } = await supabase.from('usuarios_loja').update(payload).eq('id', idEditandoUsuario)
         if (error) throw error
         alert('Dados e permissões do operador atualizados com sucesso!')
       } else {
         payload.ativo = true
-        const { error } = await supabase
-          .from('usuarios_loja')
-          .insert([payload])
-
+        const { error } = await supabase.from('usuarios_loja').insert([payload])
         if (error) throw error
         alert(`Operador "${nomeUsuario}" cadastrado com sucesso!`)
       }
@@ -185,10 +177,7 @@ export default function Configuracoes() {
   }
 
   const excluirOperador = async (user) => {
-    if (usuarios.length <= 1) {
-      return alert('Você não pode excluir o único operador cadastrado!')
-    }
-
+    if (usuarios.length <= 1) return alert('Você não pode excluir o único operador cadastrado!')
     if (!confirm(`Deseja realmente excluir o operador "${user.nome}" (${user.login})?`)) return
 
     try {
@@ -230,7 +219,6 @@ export default function Configuracoes() {
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #cbd5e1; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; width: 100%; box-sizing: border-box; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
 
-        /* Matriz de Permissões com Checkboxes */
         .permissoes-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem; margin-top: 0.75rem; margin-bottom: 1.25rem; }
         .permissoes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
         .perm-item { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: #1e293b; cursor: pointer; padding: 6px 8px; border-radius: 6px; background: #f8fafc; border: 1px solid #e2e8f0; }
@@ -263,17 +251,86 @@ export default function Configuracoes() {
 
       <div className="page-header">
         <h1 className="page-title">Configurações da Loja</h1>
-        <p className="page-subtitle">Dados da empresa, controle de acessos e permissões por perfil</p>
+        <p className="page-subtitle">Dados da empresa, controle de acessos e regras de VPC / Cashback</p>
       </div>
 
-      {/* GESTÃO DE OPERADORES & PERMISSÕES */}
+      <div className="card-box">
+        <h2>🏷️ Dados da Empresa & Comprovantes</h2>
+        <form onSubmit={salvarConfiguracoes}>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Nome Fantasia da Loja</label>
+              <input type="text" value={empresaNome} onChange={e => setEmpresaNome(e.target.value)} required />
+            </div>
+
+            <div className="form-group">
+              <label>CNPJ / CPF</label>
+              <input type="text" value={empresaDocumento} onChange={e => setEmpresaDocumento(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>WhatsApp / Telefone da Loja</label>
+              <input type="text" value={empresaTelefone} onChange={e => setEmpresaTelefone(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Instagram (@sualoja)</label>
+              <input type="text" value={empresaInstagram} onChange={e => setEmpresaInstagram(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Endereço Completo</label>
+              <input type="text" value={empresaEndereco} onChange={e => setEmpresaEndereco(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Cidade / UF</label>
+              <input type="text" value={empresaCidadeUf} onChange={e => setEmpresaCidadeUf(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Percentual de Cashback / VPC (%) - [0 para Desativar]</label>
+              <input 
+                type="number" 
+                step="0.5" 
+                min="0" 
+                max="50" 
+                value={cashbackPercentual} 
+                onChange={e => setCashbackPercentual(e.target.value)} 
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Validade do Bônus / VPC (em dias)</label>
+              <input 
+                type="number" 
+                min="1" 
+                max="365" 
+                value={cashbackDiasValidade} 
+                onChange={e => setCashbackDiasValidade(e.target.value)} 
+              />
+            </div>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label>Mensagem de Rodapé dos Comprovantes</label>
+            <input type="text" value={empresaMensagemCupom} onChange={e => setEmpresaMensagemCupom(e.target.value)} />
+          </div>
+
+          <button type="submit" className="btn btn-primary" disabled={salvandoConfig}>
+            {salvandoConfig ? 'Salvando...' : 'Salvar Dados da Loja'}
+          </button>
+        </form>
+      </div>
+
       <div className="card-box">
         <h2>👥 Equipe & Matriz de Permissões</h2>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-          Defina exatamente quais telas e módulos cada funcionário pode acessar (ex: permitir que o vendedor receba crediário).
+          Defina exatamente quais telas e módulos cada funcionário pode acessar.
         </p>
 
-        {/* Formulário de Cadastro / Edição com Checkboxes */}
         <form onSubmit={salvarOperador} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '14px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
           <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>
             {idEditandoUsuario ? `Editando Operador: ${nomeUsuario}` : 'Novo Operador'}
@@ -282,34 +339,17 @@ export default function Configuracoes() {
           <div className="grid-4">
             <div className="form-group">
               <label>Nome do Funcionário</label>
-              <input 
-                type="text" 
-                placeholder="Ex: Carlos Vendedor" 
-                value={nomeUsuario} 
-                onChange={e => setNomeUsuario(e.target.value)} 
-                required 
-              />
+              <input type="text" placeholder="Ex: Carlos Vendedor" value={nomeUsuario} onChange={e => setNomeUsuario(e.target.value)} required />
             </div>
 
             <div className="form-group">
               <label>Usuário de Login</label>
-              <input 
-                type="text" 
-                placeholder="Ex: carlos" 
-                value={loginUsuario} 
-                onChange={e => setLoginUsuario(e.target.value)} 
-                required 
-              />
+              <input type="text" placeholder="Ex: carlos" value={loginUsuario} onChange={e => setLoginUsuario(e.target.value)} required />
             </div>
 
             <div className="form-group">
               <label>{idEditandoUsuario ? 'Nova Senha (opcional)' : 'Senha'}</label>
-              <input 
-                type="password" 
-                placeholder={idEditandoUsuario ? 'Deixe em branco p/ manter' : '••••'} 
-                value={senhaUsuario} 
-                onChange={e => setSenhaUsuario(e.target.value)} 
-              />
+              <input type="password" placeholder={idEditandoUsuario ? 'Deixe em branco p/ manter' : '••••'} value={senhaUsuario} onChange={e => setSenhaUsuario(e.target.value)} />
             </div>
 
             <div className="form-group">
@@ -321,7 +361,6 @@ export default function Configuracoes() {
             </div>
           </div>
 
-          {/* Seletor de Permissões (Caixas de Seleção) */}
           {perfilUsuario !== 'admin' ? (
             <div className="permissoes-box">
               <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase', display: 'block' }}>
@@ -359,7 +398,6 @@ export default function Configuracoes() {
           </div>
         </form>
 
-        {/* Tabela de Operadores */}
         <div className="table-responsive">
           <table>
             <thead>
@@ -410,27 +448,13 @@ export default function Configuracoes() {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => iniciarEdicaoUsuario(u)}
-                          title="Editar dados e permissões"
-                        >
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => iniciarEdicaoUsuario(u)}>
                           <IconEdit /> Editar
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => alternarStatusOperador(u.id, u.ativo)}
-                          style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
-                        >
+                        <button type="button" onClick={() => alternarStatusOperador(u.id, u.ativo)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
                           {u.ativo ? 'Desativar' : 'Ativar'}
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => excluirOperador(u)}
-                          title="Excluir operador"
-                        >
+                        <button type="button" className="btn btn-sm btn-danger" onClick={() => excluirOperador(u)}>
                           <IconTrash />
                         </button>
                       </div>
@@ -441,60 +465,6 @@ export default function Configuracoes() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* DADOS DA EMPRESA */}
-      <div className="card-box">
-        <h2>🏷️ Dados da Empresa & Comprovantes</h2>
-        <form onSubmit={salvarConfiguracoes}>
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Nome Fantasia da Loja</label>
-              <input type="text" value={empresaNome} onChange={e => setEmpresaNome(e.target.value)} required />
-            </div>
-
-            <div className="form-group">
-              <label>CNPJ / CPF</label>
-              <input type="text" value={empresaDocumento} onChange={e => setEmpresaDocumento(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-              <label>WhatsApp / Telefone da Loja</label>
-              <input type="text" value={empresaTelefone} onChange={e => setEmpresaTelefone(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-              <label>Instagram (@sualoja)</label>
-              <input type="text" value={empresaInstagram} onChange={e => setEmpresaInstagram(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-              <label>Endereço Completo</label>
-              <input type="text" value={empresaEndereco} onChange={e => setEmpresaEndereco(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-              <label>Cidade / UF</label>
-              <input type="text" value={empresaCidadeUf} onChange={e => setEmpresaCidadeUf(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Percentual Padrão de Cashback (%)</label>
-              <input type="number" step="0.5" min="0" max="50" value={cashbackPercentual} onChange={e => setCashbackPercentual(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-              <label>Mensagem de Rodapé dos Comprovantes</label>
-              <input type="text" value={empresaMensagemCupom} onChange={e => setEmpresaMensagemCupom(e.target.value)} />
-            </div>
-          </div>
-
-          <button type="submit" className="btn btn-primary" disabled={salvandoConfig} style={{ marginTop: '0.75rem' }}>
-            {salvandoConfig ? 'Salvando...' : 'Salvar Dados da Loja'}
-          </button>
-        </form>
       </div>
     </div>
   )
