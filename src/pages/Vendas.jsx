@@ -2,18 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, gerarTextoCupomWhatsApp, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
-// Função utilitária para obter o início e fim do dia no horário local do Brasil
 const getIntervaloHojeBrasil = () => {
   const agora = new Date()
-  // Pega o ano, mês e dia local
   const ano = agora.getFullYear()
   const mes = String(agora.getMonth() + 1).padStart(2, '0')
   const dia = String(agora.getDate()).padStart(2, '0')
-  
-  // Cria os limites exatos do dia local
   const inicioDia = new Date(`${ano}-${mes}-${dia}T00:00:00`).toISOString()
   const fimDia = new Date(`${ano}-${mes}-${dia}T23:59:59.999`).toISOString()
-
   return { inicioDia, fimDia }
 }
 
@@ -72,6 +67,7 @@ export default function Vendas() {
   const [clientes, setClientes] = useState([])
   const [taxaCashback, setTaxaCashback] = useState(0)
   const [diasValidadeCashback, setDiasValidadeCashback] = useState(30)
+  const [limiteAbatimentoCarrinho, setLimiteAbatimentoCarrinho] = useState(50)
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
   const [clienteSelecionado, setClienteSelecionado] = useState('')
@@ -127,6 +123,9 @@ export default function Vendas() {
 
       const diasParsed = parseInt(mapa['cashback_dias_validade'])
       setDiasValidadeCashback(!isNaN(diasParsed) ? diasParsed : 30)
+
+      const tetoParsed = parseFloat(mapa['cashback_limite_carrinho'])
+      setLimiteAbatimentoCarrinho(!isNaN(tetoParsed) ? tetoParsed : 50)
 
       setDadosEmpresa({
         nome: mapa['empresa_nome'],
@@ -356,8 +355,12 @@ export default function Vendas() {
 
   const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
   const descontoManual = parseFloat(desconto) || 0
-  const valorAbatidoCashback = usarCashback ? Math.min(subtotal - descontoManual, saldoCashbackDisponivel) : 0
-  const totalComDesconto = Math.max(0, subtotal - descontoManual - valorAbatidoCashback)
+  const valorPosDesconto = Math.max(0, subtotal - descontoManual)
+
+  // CÁLCULO PROFISSIONAL DE RESGATE COM TRAVA ANTI-PREJUÍZO (% DO CARRINHO)
+  const tetoPermitidoReais = (valorPosDesconto * (limiteAbatimentoCarrinho / 100))
+  const valorAbatidoCashback = usarCashback ? Math.min(valorPosDesconto, saldoCashbackDisponivel, tetoPermitidoReais) : 0
+  const totalComDesconto = Math.max(0, valorPosDesconto - valorAbatidoCashback)
   const novoCashbackGerado = taxaCashback > 0 ? totalComDesconto * (taxaCashback / 100) : 0
 
   const totalPagoMisto = linhasMisto.reduce((s, l) => s + Number(l.valor || 0), 0)
@@ -383,11 +386,9 @@ export default function Vendas() {
   const numValorEntrada = parseFloat(valorEntrada) || 0
   const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
-  // CALIBRAÇÃO EXATA DO FECHAMENTO DE CAIXA: DO INÍCIO AO FIM DO DIA NO BRASIL
   const abrirFechamentoCaixa = async () => {
     setCarregandoCaixa(true)
     setModalCaixaAberto(true)
-    
     const { inicioDia, fimDia } = getIntervaloHojeBrasil()
 
     const { data } = await supabase
@@ -454,12 +455,13 @@ export default function Vendas() {
     setItensVenda(itensVenda.filter(item => item.id !== id))
   }
 
+  // FINALIZAÇÃO COM AUDITORIA EM LOTES
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) return alert('Adicione produtos à venda.')
     
     if (formaPagamento === 'misto') {
       if (Math.abs(totalPagoMisto - totalComDesconto) > 0.01) {
-        return alert(`O valor total das formas de pagamento (R$ ${totalPagoMisto.toFixed(2)}) deve ser exatamente igual ao total da venda (R$ ${totalComDesconto.toFixed(2)})!`)
+        return alert(`O total das formas de pagamento (R$ ${totalPagoMisto.toFixed(2)}) deve ser exatamente igual ao total da venda (R$ ${totalComDesconto.toFixed(2)})!`)
       }
       const temCrediarioMisto = linhasMisto.some(l => l.tipo === 'crediario')
       if (temCrediarioMisto && !clienteSelecionado) {
@@ -476,7 +478,6 @@ export default function Vendas() {
     const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
 
     try {
-      // Força a gravação com o timestamp ISO atual exato
       const payloadVenda = {
         total: totalComDesconto,
         forma_pagamento: formaPagamento,
@@ -494,13 +495,46 @@ export default function Vendas() {
 
       if (erroVenda) throw erroVenda
 
+      // REGISTRO DE FIDELIDADE (LOTES E EXTRATO)
       let saldoFinalCliente = saldoCashbackDisponivel
       if (clienteId) {
-        if (usarCashback) saldoFinalCliente -= valorAbatidoCashback
-        saldoFinalCliente += novoCashbackGerado
+        // 1. Se resgatou bônus, registra o DÉBITO
+        if (usarCashback && valorAbatidoCashback > 0) {
+          saldoFinalCliente -= valorAbatidoCashback
+          await supabase.from('cashback_movimentacoes').insert([{
+            cliente_id: clienteId,
+            venda_id: vendaCriada.id,
+            tipo: 'resgate',
+            valor: valorAbatidoCashback,
+            saldo_restante: 0,
+            status: 'utilizado',
+            observacao: `Resgate aplicado na Venda #${vendaCriada.id}`
+          }])
+        }
+
+        // 2. Se gerou novo bônus, registra o CRÉDITO com a data de expiração calculada
+        if (novoCashbackGerado > 0) {
+          saldoFinalCliente += novoCashbackGerado
+          const dataExp = new Date()
+          dataExp.setDate(dataExp.getDate() + (parseInt(diasValidadeCashback) || 30))
+
+          await supabase.from('cashback_movimentacoes').insert([{
+            cliente_id: clienteId,
+            venda_id: vendaCriada.id,
+            tipo: 'credito',
+            valor: novoCashbackGerado,
+            saldo_restante: novoCashbackGerado,
+            data_expiracao: dataExp.toISOString(),
+            status: 'ativo',
+            observacao: `Bônus gerado na Venda #${vendaCriada.id} (${taxaCashback}%)`
+          }])
+        }
+
+        // 3. Atualiza o saldo consolidado no cliente
         await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
       }
 
+      // Crediário
       if (formaPagamento === 'crediario') {
         const dataVencimento = new Date()
         dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -530,6 +564,7 @@ export default function Vendas() {
         }
       }
 
+      // Baixa no Estoque
       for (const item of itensVenda) {
         if (item.variacaoId) {
           const v = variacoes.find(x => x.id === item.variacaoId)
@@ -618,7 +653,8 @@ export default function Vendas() {
         tbody tr:hover { background: #f8fafc; }
         .total-section { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
         .total-value { font-size: 1.85rem; font-weight: 800; color: #2563eb; }
-        .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        
+        .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 110; backdrop-filter: blur(2px); padding: 1rem; }
         .modal-card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
@@ -816,19 +852,28 @@ export default function Vendas() {
             </div>
           )}
 
+          {/* CARD INTELIGENTE DE RESGATE COM TRAVA DE MARGEM */}
           {saldoCashbackDisponivel > 0 && (
             <div className="cashback-card-alert">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <IconSparkles />
                 <div>
-                  <strong style={{ color: '#854d0e', fontSize: '0.9rem' }}>{clienteAtual?.nome} possui R$ {saldoCashbackDisponivel.toFixed(2)} de saldo!</strong>
+                  <strong style={{ color: '#854d0e', fontSize: '0.9rem' }}>
+                    {clienteAtual?.nome} tem R$ {saldoCashbackDisponivel.toFixed(2)} de saldo!
+                  </strong>
                   <div style={{ fontSize: '0.78rem', color: '#a16207' }}>
-                    {usarCashback ? `Abatendo R$ ${valorAbatidoCashback.toFixed(2)} desta compra` : 'Deseja abater o saldo nesta compra?'}
+                    {usarCashback 
+                      ? `Abatendo R$ ${valorAbatidoCashback.toFixed(2)} (Limite anti-prejuízo: máx ${limiteAbatimentoCarrinho}% da compra)`
+                      : `Trava de margem: pode abater até R$ ${Math.min(saldoCashbackDisponivel, tetoPermitidoReais).toFixed(2)} nesta compra.`}
                   </div>
                 </div>
               </div>
-              <button type="button" className={`btn btn-sm ${usarCashback ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setUsarCashback(!usarCashback)}>
-                {usarCashback ? '✕ Não usar agora' : '✨ Usar Saldo'}
+              <button 
+                type="button" 
+                className={`btn btn-sm ${usarCashback ? 'btn-secondary' : 'btn-primary'}`} 
+                onClick={() => setUsarCashback(!usarCashback)}
+              >
+                {usarCashback ? '✕ Não usar agora' : '✨ Usar Bônus Permitido'}
               </button>
             </div>
           )}
@@ -953,7 +998,7 @@ export default function Vendas() {
 
               {usarCashback && (
                 <div style={{ background: '#fefce8', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fef08a' }}>
-                  <span style={{ fontSize: '11px', color: '#854d0e', display: 'block', fontWeight: 600 }}>CASHBACK RESGATADO:</span>
+                  <span style={{ fontSize: '11px', color: '#854d0e', display: 'block', fontWeight: 600 }}>BÔNUS ABATIDO:</span>
                   <strong style={{ fontSize: '1.1rem', color: '#a16207' }}>- R$ {valorAbatidoCashback.toFixed(2)}</strong>
                 </div>
               )}
@@ -961,7 +1006,7 @@ export default function Vendas() {
               {clienteAtual && taxaCashback > 0 && (
                 <div style={{ background: '#f0fdf4', padding: '8px 14px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
                   <span style={{ fontSize: '11px', color: '#15803d', display: 'block', fontWeight: 600 }}>
-                    NOVO CASHBACK ({taxaCashback}% - Validade {diasValidadeCashback}d):
+                    NOVO BÔNUS ({taxaCashback}% - Validade {diasValidadeCashback}d):
                   </span>
                   <strong style={{ fontSize: '1.1rem', color: '#16a34a' }}>+ R$ {novoCashbackGerado.toFixed(2)}</strong>
                 </div>
