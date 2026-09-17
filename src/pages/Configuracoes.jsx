@@ -19,7 +19,12 @@ const IconTrash = () => (
   </svg>
 )
 
-// Catálogo de Módulos com a nova permissão "fidelidade"
+const IconClose = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+)
+
 const MODULOS_DISPONIVEIS = [
   { chave: 'pdv', label: '🛒 PDV (Frente de Caixa)' },
   { chave: 'vendas', label: '📋 Histórico de Vendas' },
@@ -36,7 +41,6 @@ const MODULOS_DISPONIVEIS = [
 ]
 
 export default function Configuracoes() {
-  // Configurações Oficiais da Loja
   const [empresaNome, setEmpresaNome] = useState('')
   const [empresaDocumento, setEmpresaDocumento] = useState('')
   const [empresaTelefone, setEmpresaTelefone] = useState('')
@@ -48,6 +52,7 @@ export default function Configuracoes() {
 
   // Gerenciamento de Operadores
   const [usuarios, setUsuarios] = useState([])
+  const [formOperadorAberto, setFormOperadorAberto] = useState(false)
   const [idEditandoUsuario, setIdEditandoUsuario] = useState(null)
   const [nomeUsuario, setNomeUsuario] = useState('')
   const [loginUsuario, setLoginUsuario] = useState('')
@@ -104,13 +109,19 @@ export default function Configuracoes() {
     setSalvandoConfig(false)
   }
 
-  const limparFormUsuario = () => {
+  const fecharFormulario = () => {
+    setFormOperadorAberto(false)
     setIdEditandoUsuario(null)
     setNomeUsuario('')
     setLoginUsuario('')
     setSenhaUsuario('')
     setPerfilUsuario('vendedor')
     setPermissoesUsuario(['pdv', 'vendas', 'condicionais', 'fidelidade', 'contas_receber', 'clientes', 'produtos'])
+  }
+
+  const iniciarCriacao = () => {
+    fecharFormulario()
+    setFormOperadorAberto(true)
   }
 
   const iniciarEdicaoUsuario = (user) => {
@@ -120,6 +131,7 @@ export default function Configuracoes() {
     setSenhaUsuario('')
     setPerfilUsuario(user.perfil || 'vendedor')
     setPermissoesUsuario(Array.isArray(user.permissoes) ? user.permissoes : [])
+    setFormOperadorAberto(true)
   }
 
   const togglePermissao = (chave) => {
@@ -158,7 +170,7 @@ export default function Configuracoes() {
       if (idEditandoUsuario) {
         const { error } = await supabase.from('usuarios_loja').update(payload).eq('id', idEditandoUsuario)
         if (error) throw error
-        alert('Dados e permissões do operador atualizados com sucesso!')
+        alert('Operador atualizado com sucesso!')
       } else {
         payload.ativo = true
         const { error } = await supabase.from('usuarios_loja').insert([payload])
@@ -166,7 +178,7 @@ export default function Configuracoes() {
         alert(`Operador "${nomeUsuario}" cadastrado com sucesso!`)
       }
 
-      limparFormUsuario()
+      fecharFormulario()
       await carregarDados()
     } catch (err) {
       alert('Erro ao salvar operador: ' + err.message)
@@ -182,7 +194,7 @@ export default function Configuracoes() {
       const { error } = await supabase.from('usuarios_loja').delete().eq('id', user.id)
       if (error) throw error
       alert('Operador excluído com sucesso!')
-      if (idEditandoUsuario === user.id) limparFormUsuario()
+      if (idEditandoUsuario === user.id) fecharFormulario()
       await carregarDados()
     } catch (err) {
       alert('Erro ao excluir operador: ' + err.message)
@@ -207,7 +219,8 @@ export default function Configuracoes() {
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
 
         .card-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
-        .card-box h2 { font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 1.25rem; }
+        .card-header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 10px; }
+        .card-box h2 { font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0; }
         
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
         .grid-4 { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.2fr; gap: 1rem; margin-bottom: 1rem; }
@@ -216,6 +229,9 @@ export default function Configuracoes() {
         .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
         .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #cbd5e1; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; width: 100%; box-sizing: border-box; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
+
+        .form-drawer { background: #f8fafc; padding: 1.25rem; border-radius: 14px; border: 1px solid #cbd5e1; margin-bottom: 1.5rem; animation: fadeIn 0.15s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 
         .permissoes-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem; margin-top: 0.75rem; margin-bottom: 1.25rem; }
         .permissoes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
@@ -255,7 +271,7 @@ export default function Configuracoes() {
       {/* DADOS DA EMPRESA */}
       <div className="card-box">
         <h2>🏷️ Dados da Empresa & Comprovantes</h2>
-        <form onSubmit={salvarConfiguracoes}>
+        <form onSubmit={salvarConfiguracoes} style={{ marginTop: '1.25rem' }}>
           <div className="grid-2">
             <div className="form-group">
               <label>Nome Fantasia da Loja</label>
@@ -301,78 +317,103 @@ export default function Configuracoes() {
 
       {/* EQUIPE & PERMISSÕES */}
       <div className="card-box">
-        <h2>👥 Equipe & Matriz de Permissões</h2>
-        <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-          Defina quais módulos cada vendedor pode visualizar no menu (incluindo acesso ao menu de Fidelidade).
-        </p>
-
-        <form onSubmit={salvarOperador} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '14px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>
-            {idEditandoUsuario ? `Editando Operador: ${nomeUsuario}` : 'Novo Operador'}
-          </span>
-
-          <div className="grid-4">
-            <div className="form-group">
-              <label>Nome do Funcionário</label>
-              <input type="text" placeholder="Ex: Carlos Vendedor" value={nomeUsuario} onChange={e => setNomeUsuario(e.target.value)} required />
-            </div>
-
-            <div className="form-group">
-              <label>Usuário de Login</label>
-              <input type="text" placeholder="Ex: carlos" value={loginUsuario} onChange={e => setLoginUsuario(e.target.value)} required />
-            </div>
-
-            <div className="form-group">
-              <label>{idEditandoUsuario ? 'Nova Senha (opcional)' : 'Senha'}</label>
-              <input type="password" placeholder={idEditandoUsuario ? 'Deixe em branco p/ manter' : '••••'} value={senhaUsuario} onChange={e => setSenhaUsuario(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-              <label>Tipo de Conta</label>
-              <select value={perfilUsuario} onChange={e => setPerfilUsuario(e.target.value)}>
-                <option value="vendedor">Personalizado / Vendedor</option>
-                <option value="admin">Administrador Geral (Total)</option>
-              </select>
-            </div>
+        <div className="card-header-flex">
+          <div>
+            <h2>👥 Equipe & Matriz de Permissões</h2>
+            <span style={{ fontSize: '0.82rem', color: '#64748b' }}>{usuarios.length} operadores cadastrados</span>
           </div>
 
-          {perfilUsuario !== 'admin' ? (
-            <div className="permissoes-box">
-              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase', display: 'block' }}>
-                Marque os módulos que este usuário pode acessar:
-              </span>
+          {!formOperadorAberto && (
+            <button 
+              type="button" 
+              className="btn btn-primary"
+              onClick={iniciarCriacao}
+              style={{ gap: '6px' }}
+            >
+              <IconPlus /> Novo Operador
+            </button>
+          )}
+        </div>
 
-              <div className="permissoes-grid">
-                {MODULOS_DISPONIVEIS.map(mod => (
-                  <label key={mod.chave} className="perm-item">
-                    <input 
-                      type="checkbox" 
-                      checked={permissoesUsuario.includes(mod.chave)} 
-                      onChange={() => togglePermissao(mod.chave)} 
-                    />
-                    <span>{mod.label}</span>
-                  </label>
-                ))}
+        {/* FORMULÁRIO RETRÁTIL: SÓ ABRE SE CLICAR EM "+ NOVO OPERADOR" OU "EDITAR" */}
+        {formOperadorAberto && (
+          <form onSubmit={salvarOperador} className="form-drawer">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase' }}>
+                {idEditandoUsuario ? `Editando: ${nomeUsuario}` : 'Novo Operador'}
+              </span>
+              <button 
+                type="button" 
+                onClick={fecharFormulario} 
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
+                title="Fechar formulário"
+              >
+                <IconClose />
+              </button>
+            </div>
+
+            <div className="grid-4">
+              <div className="form-group">
+                <label>Nome do Funcionário</label>
+                <input type="text" placeholder="Ex: Carlos Vendedor" value={nomeUsuario} onChange={e => setNomeUsuario(e.target.value)} required />
+              </div>
+
+              <div className="form-group">
+                <label>Usuário de Login</label>
+                <input type="text" placeholder="Ex: carlos" value={loginUsuario} onChange={e => setLoginUsuario(e.target.value)} required />
+              </div>
+
+              <div className="form-group">
+                <label>{idEditandoUsuario ? 'Nova Senha (opcional)' : 'Senha'}</label>
+                <input type="password" placeholder={idEditandoUsuario ? 'Deixe em branco p/ manter' : '••••'} value={senhaUsuario} onChange={e => setSenhaUsuario(e.target.value)} />
+              </div>
+
+              <div className="form-group">
+                <label>Tipo de Conta</label>
+                <select value={perfilUsuario} onChange={e => setPerfilUsuario(e.target.value)}>
+                  <option value="vendedor">Personalizado / Vendedor</option>
+                  <option value="admin">Administrador Geral (Total)</option>
+                </select>
               </div>
             </div>
-          ) : (
-            <div style={{ background: '#fefce8', border: '1px solid #fef08a', padding: '10px 14px', borderRadius: '8px', margin: '10px 0 16px 0', fontSize: '0.85rem', color: '#854d0e' }}>
-              👑 <strong>Administrador Geral:</strong> possui acesso liberado a todos os módulos, custos e configurações automaticamente.
-            </div>
-          )}
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button type="submit" className="btn btn-primary" disabled={salvandoUsuario} style={{ gap: '6px' }}>
-              <IconPlus /> {salvandoUsuario ? 'Salvando...' : (idEditandoUsuario ? 'Salvar Alterações' : 'Cadastrar Operador')}
-            </button>
-            {idEditandoUsuario && (
-              <button type="button" className="btn btn-secondary" onClick={limparFormUsuario}>
-                Cancelar Edição
-              </button>
+            {perfilUsuario !== 'admin' ? (
+              <div className="permissoes-box">
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase', display: 'block' }}>
+                  Marque os módulos que este usuário pode acessar:
+                </span>
+
+                <div className="permissoes-grid">
+                  {MODULOS_DISPONIVEIS.map(mod => (
+                    <label key={mod.chave} className="perm-item">
+                      <input 
+                        type="checkbox" 
+                        checked={permissoesUsuario.includes(mod.chave)} 
+                        onChange={() => togglePermissao(mod.chave)} 
+                      />
+                      <span>{mod.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ background: '#fefce8', border: '1px solid #fef08a', padding: '10px 14px', borderRadius: '8px', margin: '10px 0 16px 0', fontSize: '0.85rem', color: '#854d0e' }}>
+                👑 <strong>Administrador Geral:</strong> possui acesso liberado a todos os módulos, custos e configurações automaticamente.
+              </div>
             )}
-          </div>
-        </form>
 
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button type="submit" className="btn btn-primary" disabled={salvandoUsuario} style={{ gap: '6px' }}>
+                {salvandoUsuario ? 'Salvando...' : (idEditandoUsuario ? 'Salvar Alterações' : 'Cadastrar Operador')}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={fecharFormulario}>
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* TABELA DE OPERADORES: SEMPRE VISÍVEL NO TOPO */}
         <div className="table-responsive">
           <table>
             <thead>
