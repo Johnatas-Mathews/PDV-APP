@@ -27,25 +27,22 @@ const IconClock = () => (
 
 export default function Fidelidade() {
   const [loading, setLoading] = useState(true)
-  const [abaAtiva, setAbaAtiva] = useState('radar') // 'radar', 'extrato', 'clientes', 'regras'
+  const [abaAtiva, setAbaAtiva] = useState('radar')
 
   const [movimentacoes, setMovimentacoes] = useState([])
   const [clientes, setClientes] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
 
-  // Regras
   const [taxaCashback, setTaxaCashback] = useState('5')
   const [validadeDias, setValidadeDias] = useState('30')
   const [limiteAbatimentoCarrinho, setLimiteAbatimentoCarrinho] = useState('50')
   const [salvandoRegras, setSalvandoRegras] = useState(false)
 
-  // Filtros
   const [busca, setBusca] = useState('')
 
-  // Modal Ajuste Manual de Saldo
   const [modalAjusteAberto, setModalAjusteAberto] = useState(false)
   const [clienteSelecionado, setClienteSelecionado] = useState(null)
-  const [tipoAjuste, setTipoAjuste] = useState('credito') // 'credito' ou 'debito'
+  const [tipoAjuste, setTipoAjuste] = useState('credito')
   const [valorAjuste, setValorAjuste] = useState('')
   const [motivoAjuste, setMotivoAjuste] = useState('')
   const [salvandoAjuste, setSalvandoAjuste] = useState(false)
@@ -53,11 +50,9 @@ export default function Fidelidade() {
   const carregarDados = async () => {
     setLoading(true)
     try {
-      // 1. Clientes
       const { data: cData } = await supabase.from('clientes').select('*').order('nome')
       if (cData) setClientes(cData)
 
-      // 2. Movimentações detalhadas
       const { data: mData } = await supabase
         .from('cashback_movimentacoes')
         .select('*, clientes(id, nome, telefone)')
@@ -65,7 +60,6 @@ export default function Fidelidade() {
         .limit(100)
       if (mData) setMovimentacoes(mData)
 
-      // 3. Configurações
       const { data: cfgData } = await supabase.from('configuracoes').select('*')
       if (cfgData) {
         const mapa = {}
@@ -85,7 +79,6 @@ export default function Fidelidade() {
     carregarDados()
   }, [])
 
-  // Salvar Regras do Programa de Fidelidade
   const salvarRegras = async (e) => {
     e.preventDefault()
     setSalvandoRegras(true)
@@ -105,7 +98,6 @@ export default function Fidelidade() {
     setSalvandoRegras(false)
   }
 
-  // Executar Ajuste Manual com Lote
   const confirmarAjusteManual = async (e) => {
     e.preventDefault()
     if (!clienteSelecionado) return
@@ -123,18 +115,15 @@ export default function Fidelidade() {
         novoSaldo = Math.max(0, saldoAtual - valNum)
       }
 
-      // 1. Atualiza o saldo geral no cliente
       const { error: erroCli } = await supabase
         .from('clientes')
         .update({ saldo_cashback: novoSaldo })
         .eq('id', clienteSelecionado.id)
       if (erroCli) throw erroCli
 
-      // 2. Calcula data de expiração se for crédito
       const dataExp = new Date()
       dataExp.setDate(dataExp.getDate() + (parseInt(validadeDias) || 30))
 
-      // 3. Registra a movimentação detalhada
       const { error: erroMov } = await supabase.from('cashback_movimentacoes').insert([{
         cliente_id: clienteSelecionado.id,
         tipo: 'ajuste',
@@ -157,7 +146,6 @@ export default function Fidelidade() {
     setSalvandoAjuste(false)
   }
 
-  // Disparo de WhatsApp
   const enviarLembreteWhatsApp = (cliente, valorBonus, dataVencimento) => {
     if (!cliente.telefone) return alert('Cliente sem telefone cadastrado!')
     const numLimpo = cliente.telefone.replace(/\D/g, '')
@@ -173,7 +161,6 @@ export default function Fidelidade() {
     window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
   }
 
-  // Clientes com saldo prestes a vencer nos próximos 7 dias
   const hoje = new Date()
   const daquiSeteDias = new Date()
   daquiSeteDias.setDate(daquiSeteDias.getDate() + 7)
@@ -186,7 +173,6 @@ export default function Fidelidade() {
     return dExp >= hoje && dExp <= daquiSeteDias
   })
 
-  // KPIs
   const clientesComSaldo = clientes.filter(c => Number(c.saldo_cashback || 0) > 0.05)
   const totalSaldoNoMercado = clientes.reduce((acc, c) => acc + Number(c.saldo_cashback || 0), 0)
   const totalPrestesAVencer = lotesPrestesAVencer.reduce((acc, l) => acc + Number(l.saldo_restante || l.valor), 0)
@@ -194,7 +180,6 @@ export default function Fidelidade() {
     .filter(m => m.tipo === 'resgate')
     .reduce((acc, m) => acc + Number(m.valor || 0), 0)
 
-  // Filtragem de clientes na aba de clientes
   const clientesFiltrados = clientes.filter(c => {
     const t = busca.toLowerCase()
     return (c.nome && c.nome.toLowerCase().includes(t)) ||
@@ -265,7 +250,6 @@ export default function Fidelidade() {
         <p className="page-subtitle">Gestão de bônus por lotes, réguas de reativação no WhatsApp e controle de margem</p>
       </div>
 
-      {/* PAINEL DE METRICAS (KPIS) */}
       <div className="kpi-grid">
         <div className="kpi-card">
           <span className="kpi-title">Bônus em Aberto (Mercado)</span>
@@ -292,7 +276,6 @@ export default function Fidelidade() {
         </div>
       </div>
 
-      {/* NAVEGAÇÃO ENTRE ABAS */}
       <div className="tabs-nav">
         <button className={`tab-btn ${abaAtiva === 'radar' ? 'active' : ''}`} onClick={() => setAbaAtiva('radar')}>
           🎯 Radar de Urgência ({lotesPrestesAVencer.length})
@@ -312,7 +295,6 @@ export default function Fidelidade() {
         <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Carregando dados de fidelidade...</p>
       ) : (
         <>
-          {/* ABA 1: RADAR DE URGENCIA (WHATSAPP 1 CLIQUE) */}
           {abaAtiva === 'radar' && (
             <div className="card-box">
               <h2>🎯 Clientes com Bônus a Expirar nos Próximos 7 Dias</h2>
@@ -371,7 +353,6 @@ export default function Fidelidade() {
             </div>
           )}
 
-          {/* ABA 2: EXTRATO COMPLETO */}
           {abaAtiva === 'extrato' && (
             <div className="card-box">
               <h2>📋 Extrato Histórico de Movimentações</h2>
@@ -431,7 +412,6 @@ export default function Fidelidade() {
             </div>
           )}
 
-          {/* ABA 3: CLIENTES & AJUSTE MANUAL */}
           {abaAtiva === 'clientes' && (
             <div className="card-box">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
@@ -488,14 +468,14 @@ export default function Fidelidade() {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* ABA 4: REGRAS DO PROGRAMA & TRAVA ANTI-PREJUIZO */}
           {abaAtiva === 'regras' && (
             <div className="card-box">
               <h2>⚙️ Regras do Programa & Proteção de Margem</h2>
@@ -555,7 +535,6 @@ export default function Fidelidade() {
         </>
       )}
 
-      {/* MODAL DE AJUSTE MANUAL */}
       {modalAjusteAberto && clienteSelecionado && (
         <div className="modal-overlay" onClick={() => setModalAjusteAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
