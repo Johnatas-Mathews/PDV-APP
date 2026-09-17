@@ -2,6 +2,21 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { gerarComprovanteVenda, gerarTextoCupomWhatsApp, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
 
+// Função utilitária para obter o início e fim do dia no horário local do Brasil
+const getIntervaloHojeBrasil = () => {
+  const agora = new Date()
+  // Pega o ano, mês e dia local
+  const ano = agora.getFullYear()
+  const mes = String(agora.getMonth() + 1).padStart(2, '0')
+  const dia = String(agora.getDate()).padStart(2, '0')
+  
+  // Cria os limites exatos do dia local
+  const inicioDia = new Date(`${ano}-${mes}-${dia}T00:00:00`).toISOString()
+  const fimDia = new Date(`${ano}-${mes}-${dia}T23:59:59.999`).toISOString()
+
+  return { inicioDia, fimDia }
+}
+
 const IconStore = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" />
@@ -368,12 +383,20 @@ export default function Vendas() {
   const numValorEntrada = parseFloat(valorEntrada) || 0
   const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
 
+  // CALIBRAÇÃO EXATA DO FECHAMENTO DE CAIXA: DO INÍCIO AO FIM DO DIA NO BRASIL
   const abrirFechamentoCaixa = async () => {
     setCarregandoCaixa(true)
     setModalCaixaAberto(true)
-    const hoje = new Date()
-    hoje.setHours(0, 0, 0, 0)
-    const { data } = await supabase.from('vendas').select('*, clientes(nome)').gte('created_at', hoje.toISOString()).order('created_at', { ascending: true })
+    
+    const { inicioDia, fimDia } = getIntervaloHojeBrasil()
+
+    const { data } = await supabase
+      .from('vendas')
+      .select('*, clientes(nome)')
+      .gte('created_at', inicioDia)
+      .lte('created_at', fimDia)
+      .order('created_at', { ascending: true })
+
     if (data) setVendasDoDia(data)
     setCarregandoCaixa(false)
   }
@@ -453,12 +476,14 @@ export default function Vendas() {
     const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
 
     try {
+      // Força a gravação com o timestamp ISO atual exato
       const payloadVenda = {
         total: totalComDesconto,
         forma_pagamento: formaPagamento,
         itens: itensVenda,
         cliente_id: clienteId,
-        pagamentos_detalhe: formaPagamento === 'misto' ? linhasMisto : []
+        pagamentos_detalhe: formaPagamento === 'misto' ? linhasMisto : [],
+        created_at: new Date().toISOString()
       }
 
       const { data: vendaCriada, error: erroVenda } = await supabase
@@ -933,7 +958,6 @@ export default function Vendas() {
                 </div>
               )}
 
-              {/* Só exibe o bônus se a taxa configurada for MAIOR que zero */}
               {clienteAtual && taxaCashback > 0 && (
                 <div style={{ background: '#f0fdf4', padding: '8px 14px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
                   <span style={{ fontSize: '11px', color: '#15803d', display: 'block', fontWeight: 600 }}>
