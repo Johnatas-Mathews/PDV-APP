@@ -13,6 +13,7 @@ import Produtos from './pages/Produtos'
 import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
+import Fidelidade from './pages/Fidelidade'
 
 // Ícones SVG minimalistas
 const IconDashboard = () => (
@@ -40,6 +41,12 @@ const IconVendasHistorico = () => (
 const IconCondicionais = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" />
+  </svg>
+)
+
+const IconFidelidade = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
   </svg>
 )
 
@@ -123,12 +130,12 @@ function MainAppLayout() {
     return <Login />
   }
 
-  // Lista com chaves de permissão
   const todosOsLinks = [
     { to: '/', label: 'Dashboard', icon: IconDashboard, chave: 'dashboard' },
     { to: '/pdv', label: 'PDV', icon: IconPDV, chave: 'pdv' },
     { to: '/vendas', label: 'Vendas', icon: IconVendasHistorico, chave: 'vendas' },
     { to: '/condicionais', label: 'Condicionais (Mala)', icon: IconCondicionais, chave: 'condicionais' },
+    { to: '/fidelidade', label: 'Fidelidade (Cashback)', icon: IconFidelidade, chave: 'fidelidade' },
     { to: '/compras', label: 'Compras & Reposição', icon: IconCompras, chave: 'compras' },
     { to: '/produtos', label: 'Produtos', icon: IconProdutos, chave: 'produtos' },
     { to: '/clientes', label: 'Clientes', icon: IconClientes, chave: 'clientes' },
@@ -138,7 +145,6 @@ function MainAppLayout() {
     { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig, chave: 'configuracoes' },
   ]
 
-  // Filtra apenas o que o operador logado tem autorização para ver
   const linksVisiveis = todosOsLinks.filter(item => temPermissao(item.chave))
 
   return (
@@ -309,6 +315,7 @@ function MainAppLayout() {
           <Route path="/pdv" element={temPermissao('pdv') ? <Vendas /> : <Navigate to="/vendas" replace />} />
           <Route path="/vendas" element={temPermissao('vendas') ? <HistoricoVendas /> : <Navigate to="/" replace />} />
           <Route path="/condicionais" element={temPermissao('condicionais') ? <Condicionais /> : <Navigate to="/pdv" replace />} />
+          <Route path="/fidelidade" element={temPermissao('fidelidade') ? <Fidelidade /> : <Navigate to="/pdv" replace />} />
           <Route path="/compras" element={temPermissao('compras') ? <Compras /> : <Navigate to="/pdv" replace />} />
           <Route path="/produtos" element={temPermissao('produtos') ? <Produtos /> : <Navigate to="/pdv" replace />} />
           <Route path="/clientes" element={temPermissao('clientes') ? <Clientes /> : <Navigate to="/pdv" replace />} />
