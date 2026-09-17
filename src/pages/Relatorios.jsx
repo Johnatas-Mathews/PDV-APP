@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
-// Ícones SVG minimalistas
 const IconTrendingUp = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" />
@@ -26,15 +25,28 @@ const IconWhatsApp = () => (
   </svg>
 )
 
+const formatarDataInput = (data) => {
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+  return `${ano}-${mes}-${dia}`
+}
+
 export default function Relatorios() {
   const [loading, setLoading] = useState(true)
   const [vendas, setVendas] = useState([])
   const [produtos, setProdutos] = useState([])
   const [clientes, setClientes] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
-
-  // Filtro de Período para DRE e Ranking
-  const [periodoMes, setPeriodoMes] = useState('mes') // 'hoje', '7dias', 'mes', 'todos'
+  
+  // Filtros de Período
+  const [periodoTipo, setPeriodoTipo] = useState('mes') // 'hoje', '7dias', 'mes', 'todos', 'custom'
+  const [dataInicio, setDataInicio] = useState(() => {
+    const d = new Date()
+    d.setDate(1) // Primeiro dia do mês atual
+    return formatarDataInput(d)
+  })
+  const [dataFim, setDataFim] = useState(() => formatarDataInput(new Date()))
 
   const carregarDados = async () => {
     setLoading(true)
@@ -63,27 +75,39 @@ export default function Relatorios() {
     carregarDados()
   }, [])
 
-  // Filtragem de vendas por período selecionado
+  // Filtro calibrado com suporte a intervalo personalizado
   const vendasFiltradas = vendas.filter(v => {
-    if (periodoMes === 'todos') return true
+    if (periodoTipo === 'todos') return true
+
     const dt = new Date(v.created_at)
     const agora = new Date()
 
-    if (periodoMes === 'hoje') {
-      return dt.toISOString().split('T')[0] === agora.toISOString().split('T')[0]
+    if (periodoTipo === 'hoje') {
+      return dt.getDate() === agora.getDate() && dt.getMonth() === agora.getMonth() && dt.getFullYear() === agora.getFullYear()
     }
-    if (periodoMes === '7dias') {
+
+    if (periodoTipo === '7dias') {
       const seteDiasAtras = new Date()
       seteDiasAtras.setDate(seteDiasAtras.getDate() - 7)
+      seteDiasAtras.setHours(0, 0, 0, 0)
       return dt >= seteDiasAtras
     }
-    if (periodoMes === 'mes') {
+
+    if (periodoTipo === 'mes') {
       return dt.getMonth() === agora.getMonth() && dt.getFullYear() === agora.getFullYear()
     }
+
+    if (periodoTipo === 'custom') {
+      if (!dataInicio && !dataFim) return true
+      const dInicio = dataInicio ? new Date(`${dataInicio}T00:00:00`) : new Date('1970-01-01')
+      const dFim = dataFim ? new Date(`${dataFim}T23:59:59.999`) : new Date('2099-12-31')
+      return dt >= dInicio && dt <= dFim
+    }
+
     return true
   })
 
-  // 1. CÁLCULO DRE & MARGEM DE LUCRO REAL
+  // DRE
   let receitaTotal = 0
   let custoTotal = 0
 
@@ -102,7 +126,7 @@ export default function Relatorios() {
   const lucroBruto = Math.max(0, receitaTotal - custoTotal)
   const margemPercentual = receitaTotal > 0 ? ((lucroBruto / receitaTotal) * 100) : 0
 
-  // 2. CURVA ABC / PRODUTOS MAIS VENDIDOS
+  // Curva ABC
   const mapaProdutos = {}
   vendasFiltradas.forEach(v => {
     const itens = Array.isArray(v.itens) ? v.itens : []
@@ -124,28 +148,24 @@ export default function Relatorios() {
 
   const rankingProdutos = Object.values(mapaProdutos).sort((a, b) => b.faturamento - a.faturamento).slice(0, 8)
 
-  // 3. ALERTA DE ESTOQUE PARADO (+45 DIAS SEM GIRO)
+  // Estoque Parado
   const quarentaCincoDiasAtras = new Date()
   quarentaCincoDiasAtras.setDate(quarentaCincoDiasAtras.getDate() - 45)
 
   const produtosParados = produtos.filter(p => {
     if ((p.estoque || 0) <= 0) return false
-
-    // Procura a última venda deste produto
     const ultimaVenda = vendas.find(v => {
       const itens = Array.isArray(v.itens) ? v.itens : []
       return itens.some(i => i.produtoId === p.id)
     })
-
-    if (!ultimaVenda) return true // Nunca vendeu e tem estoque parado
+    if (!ultimaVenda) return true
     return new Date(ultimaVenda.created_at) < quarentaCincoDiasAtras
   }).slice(0, 10)
 
-  // 4. RADAR DE CLIENTES INATIVOS COM SALDO DE CASHBACK
+  // Clientes com Cashback
   const clientesInativosComSaldo = clientes.filter(c => {
     const saldo = Number(c.saldo_cashback || 0)
     if (saldo <= 0.5) return false
-
     const ultimaVenda = vendas.find(v => v.cliente_id === c.id)
     if (!ultimaVenda) return true
     return new Date(ultimaVenda.created_at) < quarentaCincoDiasAtras
@@ -170,22 +190,27 @@ export default function Relatorios() {
     <div className="rel-wrapper">
       <style>{`
         .rel-wrapper { width: 100%; max-width: 1200px; margin: 0 auto; box-sizing: border-box; }
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem; }
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
 
-        .filter-periodo { display: flex; gap: 6px; }
-        .btn-p { padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+        .filter-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 10px; }
+        .filter-periodo { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-p { padding: 7px 14px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .btn-p.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
-        /* Grid DRE */
+        .custom-dates-bar { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; flex-wrap: wrap; }
+        .date-input-group { display: flex; align-items: center; gap: 6px; }
+        .date-input-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+        .date-input-group input { height: 36px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.85rem; color: #0f172a; outline: none; }
+        .date-input-group input:focus { border-color: #2563eb; }
+
         .dre-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
         .dre-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
         .dre-title { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
         .dre-val { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
         .dre-sub { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
 
-        /* Blocos Duplos */
         .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
         .card-panel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); box-sizing: border-box; }
         .panel-heading { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; }
@@ -206,7 +231,8 @@ export default function Relatorios() {
 
         @media (max-width: 600px) {
           .dre-grid { grid-template-columns: 1fr; }
-          .filter-periodo { width: 100%; overflow-x: auto; }
+          .custom-dates-bar { flex-direction: column; align-items: stretch; }
+          .date-input-group { justify-content: space-between; }
         }
       `}</style>
 
@@ -215,13 +241,43 @@ export default function Relatorios() {
           <h1 className="page-title">Relatórios Gerenciais</h1>
           <p className="page-subtitle">DRE, Margem de Lucro Real, Curva ABC de vendas e radar de clientes</p>
         </div>
+      </div>
 
+      {/* BARRA DE FILTRO COM INTERVALO PERSONALIZADO */}
+      <div className="filter-container">
         <div className="filter-periodo">
-          <button className={`btn-p ${periodoMes === 'hoje' ? 'active' : ''}`} onClick={() => setPeriodoMes('hoje')}>Hoje</button>
-          <button className={`btn-p ${periodoMes === '7dias' ? 'active' : ''}`} onClick={() => setPeriodoMes('7dias')}>7 Dias</button>
-          <button className={`btn-p ${periodoMes === 'mes' ? 'active' : ''}`} onClick={() => setPeriodoMes('mes')}>Mês Atual</button>
-          <button className={`btn-p ${periodoMes === 'todos' ? 'active' : ''}`} onClick={() => setPeriodoMes('todos')}>Todo o Período</button>
+          <button className={`btn-p ${periodoTipo === 'hoje' ? 'active' : ''}`} onClick={() => setPeriodoTipo('hoje')}>Hoje</button>
+          <button className={`btn-p ${periodoTipo === '7dias' ? 'active' : ''}`} onClick={() => setPeriodoTipo('7dias')}>Últimos 7 Dias</button>
+          <button className={`btn-p ${periodoTipo === 'mes' ? 'active' : ''}`} onClick={() => setPeriodoTipo('mes')}>Mês Atual</button>
+          <button className={`btn-p ${periodoTipo === 'todos' ? 'active' : ''}`} onClick={() => setPeriodoTipo('todos')}>Todo o Período</button>
+          <button className={`btn-p ${periodoTipo === 'custom' ? 'active' : ''}`} onClick={() => setPeriodoTipo('custom')}>📅 Intervalo Personalizado (De ➔ Até)</button>
         </div>
+
+        {periodoTipo === 'custom' && (
+          <div className="custom-dates-bar">
+            <div className="date-input-group">
+              <label>De (Início):</label>
+              <input 
+                type="date" 
+                value={dataInicio} 
+                onChange={e => setDataInicio(e.target.value)} 
+              />
+            </div>
+
+            <div className="date-input-group">
+              <label>Até (Fim):</label>
+              <input 
+                type="date" 
+                value={dataFim} 
+                onChange={e => setDataFim(e.target.value)} 
+              />
+            </div>
+
+            <span style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: 600, marginLeft: 'auto' }}>
+              ✓ Filtrando de {new Date(`${dataInicio}T12:00:00`).toLocaleDateString('pt-BR')} até {new Date(`${dataFim}T12:00:00`).toLocaleDateString('pt-BR')}
+            </span>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -291,7 +347,7 @@ export default function Relatorios() {
               )}
             </div>
 
-            {/* ALERTA DE ESTOQUE PARADO (+45 DIAS SEM GIRO) */}
+            {/* ALERTA DE ESTOQUE PARADO */}
             <div className="card-panel">
               <div className="panel-heading">
                 <span>⚠️ Estoque Parado (+45 dias)</span>
