@@ -39,14 +39,17 @@ export default function Relatorios() {
   const [clientes, setClientes] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
-  // Filtros de Período
-  const [periodoTipo, setPeriodoTipo] = useState('mes') // 'hoje', '7dias', 'mes', 'todos', 'custom'
+  // Filtros de Período do DRE / Vendas
+  const [periodoTipo, setPeriodoTipo] = useState('mes')
   const [dataInicio, setDataInicio] = useState(() => {
     const d = new Date()
-    d.setDate(1) // Primeiro dia do mês atual
+    d.setDate(1)
     return formatarDataInput(d)
   })
   const [dataFim, setDataFim] = useState(() => formatarDataInput(new Date()))
+
+  // Filtro de Sensibilidade de Estoque Parado
+  const [diasCorteEstoque, setDiasCorteEstoque] = useState(45)
 
   const carregarDados = async () => {
     setLoading(true)
@@ -75,7 +78,7 @@ export default function Relatorios() {
     carregarDados()
   }, [])
 
-  // Filtro calibrado com suporte a intervalo personalizado
+  // Filtro calibrado do DRE
   const vendasFiltradas = vendas.filter(v => {
     if (periodoTipo === 'todos') return true
 
@@ -148,27 +151,56 @@ export default function Relatorios() {
 
   const rankingProdutos = Object.values(mapaProdutos).sort((a, b) => b.faturamento - a.faturamento).slice(0, 8)
 
-  // Estoque Parado
-  const quarentaCincoDiasAtras = new Date()
-  quarentaCincoDiasAtras.setDate(quarentaCincoDiasAtras.getDate() - 45)
+  // CÁLCULO PRECISO DE ESTOQUE PARADO
+  const dataLimiteParado = new Date()
+  dataLimiteParado.setDate(dataLimiteParado.getDate() - diasCorteEstoque)
+  dataLimiteParado.setHours(23, 59, 59, 999)
 
-  const produtosParados = produtos.filter(p => {
-    if ((p.estoque || 0) <= 0) return false
+  const produtosParados = produtos.map(p => {
+    if ((p.estoque || 0) <= 0) return null
+
+    // 1. Procura a venda mais recente deste produto
     const ultimaVenda = vendas.find(v => {
       const itens = Array.isArray(v.itens) ? v.itens : []
       return itens.some(i => i.produtoId === p.id)
     })
-    if (!ultimaVenda) return true
-    return new Date(ultimaVenda.created_at) < quarentaCincoDiasAtras
-  }).slice(0, 10)
 
-  // Clientes com Cashback
+    let dataReferencia
+    let motivo = ''
+
+    if (ultimaVenda) {
+      dataReferencia = new Date(ultimaVenda.created_at)
+      motivo = 'Sem vendas recentes'
+    } else {
+      // Se nunca vendeu, checa a data de criação do produto
+      dataReferencia = p.created_at ? new Date(p.created_at) : null
+      motivo = 'Cadastrado e nunca vendeu'
+    }
+
+    // Se o produto foi cadastrado recentemente (menos que o corte), ele NÃO é estoque parado
+    if (!dataReferencia || dataReferencia >= dataLimiteParado) {
+      return null
+    }
+
+    // Dias exatos sem giro
+    const diffTempo = Math.abs(new Date() - dataReferencia)
+    const diasSemGiro = Math.floor(diffTempo / (1000 * 60 * 60 * 24))
+
+    return {
+      ...p,
+      diasSemGiro,
+      motivo,
+      dataUltimaAtividade: dataReferencia.toLocaleDateString('pt-BR')
+    }
+  }).filter(Boolean).sort((a, b) => b.diasSemGiro - a.diasSemGiro).slice(0, 10)
+
+  // Radar de Clientes Inativos com Saldo
   const clientesInativosComSaldo = clientes.filter(c => {
     const saldo = Number(c.saldo_cashback || 0)
     if (saldo <= 0.5) return false
     const ultimaVenda = vendas.find(v => v.cliente_id === c.id)
     if (!ultimaVenda) return true
-    return new Date(ultimaVenda.created_at) < quarentaCincoDiasAtras
+    return new Date(ultimaVenda.created_at) < dataLimiteParado
   })
 
   const convidarClienteWhatsApp = (cliente) => {
@@ -224,6 +256,9 @@ export default function Relatorios() {
         .btn-zap-mini { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
         .btn-zap-mini:hover { background: #bbf7d0; }
 
+        .selector-dias { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: #475569; }
+        .selector-dias select { height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 0.78rem; font-weight: 700; color: #0f172a; }
+
         @media (max-width: 900px) {
           .dre-grid { grid-template-columns: 1fr 1fr; }
           .two-cols { grid-template-columns: 1fr; }
@@ -239,11 +274,10 @@ export default function Relatorios() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Relatórios Gerenciais</h1>
-          <p className="page-subtitle">DRE, Margem de Lucro Real, Curva ABC de vendas e radar de clientes</p>
+          <p className="page-subtitle">DRE, Margem de Lucro Real, Curva ABC de vendas e giro de estoque</p>
         </div>
       </div>
 
-      {/* BARRA DE FILTRO COM INTERVALO PERSONALIZADO */}
       <div className="filter-container">
         <div className="filter-periodo">
           <button className={`btn-p ${periodoTipo === 'hoje' ? 'active' : ''}`} onClick={() => setPeriodoTipo('hoje')}>Hoje</button>
@@ -257,20 +291,12 @@ export default function Relatorios() {
           <div className="custom-dates-bar">
             <div className="date-input-group">
               <label>De (Início):</label>
-              <input 
-                type="date" 
-                value={dataInicio} 
-                onChange={e => setDataInicio(e.target.value)} 
-              />
+              <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
             </div>
 
             <div className="date-input-group">
               <label>Até (Fim):</label>
-              <input 
-                type="date" 
-                value={dataFim} 
-                onChange={e => setDataFim(e.target.value)} 
-              />
+              <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} />
             </div>
 
             <span style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: 600, marginLeft: 'auto' }}>
@@ -284,7 +310,6 @@ export default function Relatorios() {
         <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Processando inteligência de negócio...</p>
       ) : (
         <>
-          {/* CARDS DRE / LUCRATIVIDADE */}
           <div className="dre-grid">
             <div className="dre-card">
               <span className="dre-title">Faturamento Líquido</span>
@@ -314,7 +339,6 @@ export default function Relatorios() {
           </div>
 
           <div className="two-cols">
-            {/* CURVA ABC (PRODUTOS MAIS VENDIDOS) */}
             <div className="card-panel">
               <div className="panel-heading">
                 <span>🏆 Curva ABC: Mais Vendidos</span>
@@ -347,37 +371,56 @@ export default function Relatorios() {
               )}
             </div>
 
-            {/* ALERTA DE ESTOQUE PARADO */}
+            {/* ALERTA CALIBRADO DE ESTOQUE PARADO */}
             <div className="card-panel">
               <div className="panel-heading">
-                <span>⚠️ Estoque Parado (+45 dias)</span>
-                <IconAlertTriangle />
+                <span>⚠️ Alerta de Estoque Parado</span>
+                <div className="selector-dias">
+                  <span>Sem giro há:</span>
+                  <select value={diasCorteEstoque} onChange={e => setDiasCorteEstoque(Number(e.target.value))}>
+                    <option value={30}>+30 dias</option>
+                    <option value={45}>+45 dias</option>
+                    <option value={60}>+60 dias</option>
+                    <option value={90}>+90 dias</option>
+                  </select>
+                </div>
               </div>
 
               {produtosParados.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#10b981', padding: '1.5rem' }}>
-                  🎉 Excelente! Todas as suas peças têm alto giro de vendas.
-                </p>
+                <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+                  <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '8px' }}>🎉</span>
+                  <strong style={{ color: '#10b981', display: 'block' }}>Giro de Estoque Saudável!</strong>
+                  <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                    Nenhum produto antigo parado sem vendas há mais de {diasCorteEstoque} dias.
+                  </span>
+                </div>
               ) : (
                 <>
                   <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px' }}>
-                    Peças com estoque que não vendem há mais de 45 dias. Sugestão: colocar em liquidação ou promoções.
+                    Peças com estoque físico sem vendas há mais de {diasCorteEstoque} dias (novidades recém-cadastradas não entram aqui).
                   </p>
                   <table>
                     <thead>
                       <tr>
                         <th>Produto Parado</th>
-                        <th>Preço</th>
+                        <th>Última Atividade</th>
+                        <th style={{ textAlign: 'center' }}>Parado há</th>
                         <th style={{ textAlign: 'center' }}>Estoque</th>
                       </tr>
                     </thead>
                     <tbody>
                       {produtosParados.map(prod => (
                         <tr key={prod.id}>
-                          <td><strong>{prod.nome}</strong></td>
-                          <td>R$ {Number(prod.preco).toFixed(2)}</td>
+                          <td>
+                            <strong>{prod.nome}</strong>
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{prod.motivo}</div>
+                          </td>
+                          <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{prod.dataUltimaAtividade}</td>
                           <td style={{ textAlign: 'center' }}>
-                            <span className="badge-warning">{prod.estoque} un paradas</span>
+                            <span className="badge-warning">{prod.diasSemGiro} dias</span>
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                            {prod.estoque} un
                           </td>
                         </tr>
                       ))}
@@ -388,7 +431,6 @@ export default function Relatorios() {
             </div>
           </div>
 
-          {/* RADAR DE CLIENTES INATIVOS COM CASHBACK */}
           <div className="card-panel">
             <div className="panel-heading">
               <span>🎯 Radar de Clientes Inativos com Cashback Parado</span>
@@ -396,7 +438,7 @@ export default function Relatorios() {
             </div>
 
             <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
-              Clientes que não compram há mais de 45 dias mas ainda possuem bônus de cashback na sua loja. Use o WhatsApp para lembrá-los e trazê-los de volta!
+              Clientes que não compram há mais de {diasCorteEstoque} dias mas ainda possuem bônus de cashback na sua loja. Use o WhatsApp para lembrá-los e trazê-los de volta!
             </p>
 
             {clientesInativosComSaldo.length === 0 ? (
