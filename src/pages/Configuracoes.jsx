@@ -19,10 +19,12 @@ const IconTrash = () => (
   </svg>
 )
 
+// Catálogo de Módulos com a nova permissão "fidelidade"
 const MODULOS_DISPONIVEIS = [
   { chave: 'pdv', label: '🛒 PDV (Frente de Caixa)' },
   { chave: 'vendas', label: '📋 Histórico de Vendas' },
   { chave: 'condicionais', label: '👗 Mala de Roupas (Condicional)' },
+  { chave: 'fidelidade', label: '✨ Fidelidade & Cashback' },
   { chave: 'contas_receber', label: '💰 Contas a Receber (Receber Crediário)' },
   { chave: 'clientes', label: '👥 Clientes (Consultar / Cadastrar)' },
   { chave: 'produtos', label: '🏷️ Produtos & Grade' },
@@ -34,6 +36,7 @@ const MODULOS_DISPONIVEIS = [
 ]
 
 export default function Configuracoes() {
+  // Configurações Oficiais da Loja
   const [empresaNome, setEmpresaNome] = useState('')
   const [empresaDocumento, setEmpresaDocumento] = useState('')
   const [empresaTelefone, setEmpresaTelefone] = useState('')
@@ -41,17 +44,16 @@ export default function Configuracoes() {
   const [empresaCidadeUf, setEmpresaCidadeUf] = useState('')
   const [empresaInstagram, setEmpresaInstagram] = useState('')
   const [empresaMensagemCupom, setEmpresaMensagemCupom] = useState('')
-  const [cashbackPercentual, setCashbackPercentual] = useState('0')
-  const [cashbackDiasValidade, setCashbackDiasValidade] = useState('30')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
 
+  // Gerenciamento de Operadores
   const [usuarios, setUsuarios] = useState([])
   const [idEditandoUsuario, setIdEditandoUsuario] = useState(null)
   const [nomeUsuario, setNomeUsuario] = useState('')
   const [loginUsuario, setLoginUsuario] = useState('')
   const [senhaUsuario, setSenhaUsuario] = useState('')
   const [perfilUsuario, setPerfilUsuario] = useState('vendedor')
-  const [permissoesUsuario, setPermissoesUsuario] = useState(['pdv', 'vendas', 'condicionais', 'contas_receber', 'clientes', 'produtos'])
+  const [permissoesUsuario, setPermissoesUsuario] = useState(['pdv', 'vendas', 'condicionais', 'fidelidade', 'contas_receber', 'clientes', 'produtos'])
   const [salvandoUsuario, setSalvandoUsuario] = useState(false)
 
   const carregarDados = async () => {
@@ -66,8 +68,6 @@ export default function Configuracoes() {
       setEmpresaCidadeUf(mapa['empresa_cidade_uf'] || '')
       setEmpresaInstagram(mapa['empresa_instagram'] || '')
       setEmpresaMensagemCupom(mapa['empresa_mensagem_cupom'] || 'Obrigado pela preferência! Volte sempre.')
-      setCashbackPercentual(mapa['cashback_percentual'] !== undefined ? String(mapa['cashback_percentual']) : '0')
-      setCashbackDiasValidade(mapa['cashback_dias_validade'] !== undefined ? String(mapa['cashback_dias_validade']) : '30')
     }
 
     const { data: uData } = await supabase.from('usuarios_loja').select('*').order('id')
@@ -89,16 +89,14 @@ export default function Configuracoes() {
       { chave: 'empresa_endereco', valor: empresaEndereco.trim() },
       { chave: 'empresa_cidade_uf', valor: empresaCidadeUf.trim() },
       { chave: 'empresa_instagram', valor: empresaInstagram.trim() },
-      { chave: 'empresa_mensagem_cupom', valor: empresaMensagemCupom.trim() },
-      { chave: 'cashback_percentual', valor: cashbackPercentual === '' ? '0' : String(cashbackPercentual) },
-      { chave: 'cashback_dias_validade', valor: cashbackDiasValidade === '' ? '30' : String(cashbackDiasValidade) }
+      { chave: 'empresa_mensagem_cupom', valor: empresaMensagemCupom.trim() }
     ]
 
     try {
       for (const item of configs) {
         await supabase.from('configuracoes').upsert({ chave: item.chave, valor: item.valor }, { onConflict: 'chave' })
       }
-      alert('Configurações salvas com sucesso!')
+      alert('Dados da loja atualizados com sucesso!')
     } catch (err) {
       alert('Erro ao salvar: ' + err.message)
     }
@@ -112,7 +110,7 @@ export default function Configuracoes() {
     setLoginUsuario('')
     setSenhaUsuario('')
     setPerfilUsuario('vendedor')
-    setPermissoesUsuario(['pdv', 'vendas', 'condicionais', 'contas_receber', 'clientes', 'produtos'])
+    setPermissoesUsuario(['pdv', 'vendas', 'condicionais', 'fidelidade', 'contas_receber', 'clientes', 'produtos'])
   }
 
   const iniciarEdicaoUsuario = (user) => {
@@ -251,9 +249,10 @@ export default function Configuracoes() {
 
       <div className="page-header">
         <h1 className="page-title">Configurações da Loja</h1>
-        <p className="page-subtitle">Dados da empresa, controle de acessos e regras de VPC / Cashback</p>
+        <p className="page-subtitle">Dados cadastrais da empresa, mensagens de comprovantes e controle de equipe</p>
       </div>
 
+      {/* DADOS DA EMPRESA */}
       <div className="card-box">
         <h2>🏷️ Dados da Empresa & Comprovantes</h2>
         <form onSubmit={salvarConfiguracoes}>
@@ -289,31 +288,6 @@ export default function Configuracoes() {
             </div>
           </div>
 
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Percentual de Cashback / VPC (%) - [0 para Desativar]</label>
-              <input 
-                type="number" 
-                step="0.5" 
-                min="0" 
-                max="50" 
-                value={cashbackPercentual} 
-                onChange={e => setCashbackPercentual(e.target.value)} 
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Validade do Bônus / VPC (em dias)</label>
-              <input 
-                type="number" 
-                min="1" 
-                max="365" 
-                value={cashbackDiasValidade} 
-                onChange={e => setCashbackDiasValidade(e.target.value)} 
-              />
-            </div>
-          </div>
-
           <div className="form-group" style={{ marginBottom: '1rem' }}>
             <label>Mensagem de Rodapé dos Comprovantes</label>
             <input type="text" value={empresaMensagemCupom} onChange={e => setEmpresaMensagemCupom(e.target.value)} />
@@ -325,10 +299,11 @@ export default function Configuracoes() {
         </form>
       </div>
 
+      {/* EQUIPE & PERMISSÕES */}
       <div className="card-box">
         <h2>👥 Equipe & Matriz de Permissões</h2>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-          Defina exatamente quais telas e módulos cada funcionário pode acessar.
+          Defina quais módulos cada vendedor pode visualizar no menu (incluindo acesso ao menu de Fidelidade).
         </p>
 
         <form onSubmit={salvarOperador} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '14px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
