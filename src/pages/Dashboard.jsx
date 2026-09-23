@@ -32,6 +32,12 @@ const IconEdit = () => (
   </svg>
 )
 
+// Converte número em formato string visual BR (ex: 30000 -> "30.000,00")
+const formatarParaMoedaBR = (valor) => {
+  const num = Number(valor) || 0
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function Dashboard() {
   const { operador } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -113,12 +119,31 @@ export default function Dashboard() {
     carregarDashboard()
   }, [])
 
+  // Máscara de moeda automática em tempo real ao digitar
+  const lidarComMudancaMeta = (e) => {
+    const apenasDigitos = e.target.value.replace(/\D/g, '')
+    if (!apenasDigitos) {
+      setNovaMetaInput('')
+      return
+    }
+    const valorCentavos = (parseInt(apenasDigitos, 10) / 100)
+    setNovaMetaInput(formatarParaMoedaBR(valorCentavos))
+  }
+
+  // Converter string formatada (ex: "30.000,00") para número decimal float puro
+  const converterMoedaBRParaFloat = (texto) => {
+    if (!texto) return 0
+    const limpo = texto.replace(/\./g, '').replace(',', '.')
+    return parseFloat(limpo) || 0
+  }
+
   // Salvar nova meta no Supabase
   const salvarNovaMeta = async (e) => {
     e.preventDefault()
-    const valorNum = parseFloat(String(novaMetaInput).replace(',', '.'))
-    if (isNaN(valorNum) || valorNum <= 0) {
-      return alert('Informe um valor de meta válido e maior que zero.')
+    const valorNum = converterMoedaBRParaFloat(novaMetaInput)
+
+    if (valorNum <= 0) {
+      return alert('Por favor, informe um valor de meta maior que zero.')
     }
 
     setSalvandoMeta(true)
@@ -132,7 +157,7 @@ export default function Dashboard() {
       setMetaMensal(valorNum)
       setModalMetaAberto(false)
       setNovaMetaInput('')
-      alert(`Meta mensal atualizada para R$ ${valorNum.toFixed(2)} com sucesso!`)
+      alert(`Meta mensal definida para R$ ${formatarParaMoedaBR(valorNum)} com sucesso!`)
     } catch (err) {
       alert('Erro ao salvar meta: ' + err.message)
     }
@@ -244,6 +269,39 @@ export default function Dashboard() {
           gap: 8px;
         }
 
+        /* INPUT COM PREFIXO R$ */
+        .input-currency-container {
+          position: relative;
+          display: flex;
+          align-items: center;
+          width: 100%;
+        }
+        .currency-prefix {
+          position: absolute;
+          left: 12px;
+          font-weight: 800;
+          color: #64748b;
+          font-size: 1rem;
+          pointer-events: none;
+        }
+        .currency-field {
+          width: 100%;
+          height: 44px;
+          padding: 0 12px 0 42px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          font-size: 1.15rem;
+          font-weight: 800;
+          color: #0f172a;
+          box-sizing: border-box;
+          outline: none;
+          background: #ffffff;
+        }
+        .currency-field:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
         /* GRID DE KPIS */
         .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
         .kpi-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
@@ -294,7 +352,7 @@ export default function Dashboard() {
             type="button" 
             className="btn-edit-meta"
             onClick={() => {
-              setNovaMetaInput(String(metaMensal))
+              setNovaMetaInput(formatarParaMoedaBR(metaMensal))
               setModalMetaAberto(true)
             }}
           >
@@ -304,8 +362,8 @@ export default function Dashboard() {
 
         <div className="meta-values-row">
           <div>
-            <span className="meta-num-atual">R$ {faturamentoMes.toFixed(2)}</span>
-            <span className="meta-num-total"> / R$ {metaMensal.toFixed(2)}</span>
+            <span className="meta-num-atual">R$ {formatarParaMoedaBR(faturamentoMes)}</span>
+            <span className="meta-num-total"> / R$ {formatarParaMoedaBR(metaMensal)}</span>
           </div>
           <span className="meta-percent-badge">
             {percentualReal.toFixed(1)}% {percentualReal >= 100 ? '🎉 BATEU A META!' : 'atingido'}
@@ -320,15 +378,15 @@ export default function Dashboard() {
         <div className="meta-footer-row">
           <span>
             {percentualReal >= 100 ? (
-              <strong style={{ color: '#16a34a' }}>Sensacional! Vocês superaram a meta estipulada em R$ {(faturamentoMes - metaMensal).toFixed(2)}!</strong>
+              <strong style={{ color: '#16a34a' }}>Sensacional! Vocês superaram a meta estipulada em R$ {formatarParaMoedaBR(faturamentoMes - metaMensal)}!</strong>
             ) : (
-              <>Faltam <strong>R$ {valorRestante.toFixed(2)}</strong> para atingir os 100%.</>
+              <>Faltam <strong>R$ {formatarParaMoedaBR(valorRestante)}</strong> para atingir os 100%.</>
             )}
           </span>
 
           {percentualReal < 100 && (
             <span>
-              Ritmo necessário: <strong>R$ {mediaDiariaNecessaria.toFixed(2)}/dia</strong> ({diasRestantes} dias restantes).
+              Ritmo necessário: <strong>R$ {formatarParaMoedaBR(mediaDiariaNecessaria)}/dia</strong> ({diasRestantes} dias restantes).
             </span>
           )}
         </div>
@@ -341,7 +399,7 @@ export default function Dashboard() {
             <span className="kpi-title">Vendido Hoje</span>
             <IconTrendingUp />
           </div>
-          <span className="kpi-val" style={{ color: '#16a34a' }}>R$ {faturamentoHoje.toFixed(2)}</span>
+          <span className="kpi-val" style={{ color: '#16a34a' }}>R$ {formatarParaMoedaBR(faturamentoHoje)}</span>
           <span className="kpi-sub">Faturamento do dia atual</span>
         </div>
 
@@ -350,7 +408,7 @@ export default function Dashboard() {
             <span className="kpi-title">Faturamento no Mês</span>
             <IconDollar />
           </div>
-          <span className="kpi-val" style={{ color: '#2563eb' }}>R$ {faturamentoMes.toFixed(2)}</span>
+          <span className="kpi-val" style={{ color: '#2563eb' }}>R$ {formatarParaMoedaBR(faturamentoMes)}</span>
           <span className="kpi-sub">Total acumulado do mês</span>
         </div>
 
@@ -368,7 +426,7 @@ export default function Dashboard() {
             <span className="kpi-title">Ticket Médio</span>
             <IconTarget />
           </div>
-          <span className="kpi-val" style={{ color: '#7c3aed' }}>R$ {ticketMedioMes.toFixed(2)}</span>
+          <span className="kpi-val" style={{ color: '#7c3aed' }}>R$ {formatarParaMoedaBR(ticketMedioMes)}</span>
           <span className="kpi-sub">Valor médio por compra</span>
         </div>
       </div>
@@ -395,7 +453,7 @@ export default function Dashboard() {
                     <td>{new Date(v.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
                     <td><strong>{v.clientes?.nome || 'Cliente Avulso'}</strong></td>
                     <td><span style={{ textTransform: 'uppercase', fontSize: '0.78rem', fontWeight: 600 }}>{v.forma_pagamento}</span></td>
-                    <td style={{ textAlign: 'right', fontWeight: 800, color: '#2563eb' }}>R$ {Number(v.total).toFixed(2)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800, color: '#2563eb' }}>R$ {formatarParaMoedaBR(v.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -404,7 +462,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* MODAL DE EDIÇÃO DA META */}
+      {/* MODAL DE EDIÇÃO DA META COM MÁSCARA AUTOMÁTICA BR */}
       {modalMetaAberto && (
         <div className="modal-overlay" onClick={() => setModalMetaAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -412,7 +470,7 @@ export default function Dashboard() {
               🎯 Definir Meta de Vendas do Mês
             </h3>
             <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1.25rem' }}>
-              Defina o objetivo financeiro da loja para o mês atual. A barra de progresso calculará o avanço em tempo real.
+              Digite apenas os números. A pontuação de milhar e a vírgula de centavos são inseridas automaticamente.
             </p>
 
             <form onSubmit={salvarNovaMeta}>
@@ -420,17 +478,24 @@ export default function Dashboard() {
                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>
                   Valor da Meta (R$)
                 </label>
-                <input 
-                  type="number" 
-                  step="100"
-                  min="1"
-                  value={novaMetaInput}
-                  onChange={e => setNovaMetaInput(e.target.value)}
-                  placeholder="Ex: 35000"
-                  style={{ width: '100%', height: '42px', padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '1rem', fontWeight: 700, boxSizing: 'border-box', outline: 'none' }}
-                  required
-                  autoFocus
-                />
+                
+                <div className="input-currency-container">
+                  <span className="currency-prefix">R$</span>
+                  <input 
+                    type="text"
+                    inputMode="numeric"
+                    className="currency-field"
+                    value={novaMetaInput}
+                    onChange={lidarComMudancaMeta}
+                    placeholder="0,00"
+                    required
+                    autoFocus
+                  />
+                </div>
+                
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginTop: '6px' }}>
+                  Ex: digite <strong>3000000</strong> para preencher <strong>30.000,00</strong>
+                </span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -446,7 +511,7 @@ export default function Dashboard() {
                   disabled={salvandoMeta}
                   style={{ padding: '0.6rem 1.25rem', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  {salvandoMeta ? 'Salvando...' : 'Salvar Nova Meta'}
+                  {salvandoMeta ? 'Salvando...' : 'Salvar Meta'}
                 </button>
               </div>
             </form>
