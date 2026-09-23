@@ -14,6 +14,7 @@ import ContasReceber from './pages/ContasReceber'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
 import Fidelidade from './pages/Fidelidade'
+import Estoque from './pages/Estoque'
 
 // Ícones SVG minimalistas
 const IconDashboard = () => (
