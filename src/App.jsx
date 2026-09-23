@@ -325,6 +325,7 @@ function MainAppLayout() {
           <Route path="/contas-receber" element={temPermissao('contas_receber') ? <ContasReceber /> : <Navigate to="/pdv" replace />} />
           <Route path="/relatorios" element={temPermissao('relatorios') ? <Relatorios /> : <Navigate to="/pdv" replace />} />
           <Route path="/configuracoes" element={temPermissao('configuracoes') ? <Configuracoes /> : <Navigate to="/pdv" replace />} />
+          <Route path="/estoque" element={temPermissao('produtos') ? <Estoque /> : <Navigate to="/pdv" replace />} />
         </Routes>
       </main>
     </div>
