@@ -19,6 +19,12 @@ const IconUsers = () => (
   </svg>
 )
 
+const IconTag = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" /><circle cx="7" cy="7" r="1.5" />
+  </svg>
+)
+
 const IconWhatsApp = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -39,7 +45,7 @@ export default function Relatorios() {
   const [clientes, setClientes] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
-  // Filtros de Período do DRE / Vendas
+  // Filtros de Período
   const [periodoTipo, setPeriodoTipo] = useState('mes')
   const [dataInicio, setDataInicio] = useState(() => {
     const d = new Date()
@@ -47,6 +53,9 @@ export default function Relatorios() {
     return formatarDataInput(d)
   })
   const [dataFim, setDataFim] = useState(() => formatarDataInput(new Date()))
+
+  // Filtro por Categoria
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
 
   // Filtro de Sensibilidade de Estoque Parado
   const [diasCorteEstoque, setDiasCorteEstoque] = useState(45)
@@ -66,7 +75,7 @@ export default function Relatorios() {
       if (cfgData) {
         const mapa = {}
         cfgData.forEach(c => { mapa[c.chave] = c.valor })
-        setDadosEmpresa({ nome: mapa['empresa_nome'] || 'TECCO MODA' })
+        setDadosEmpresa({ nome: mapa['empresa_nome'] || 'TECCO' })
       }
     } catch (err) {
       alert('Erro ao carregar relatórios: ' + err.message)
@@ -78,8 +87,19 @@ export default function Relatorios() {
     carregarDados()
   }, [])
 
-  // Filtro calibrado do DRE
-  const vendasFiltradas = vendas.filter(v => {
+  // Mapa rápido de ProdutoId -> Categoria
+  const mapaCategoriasProdutos = {}
+  produtos.forEach(p => {
+    mapaCategoriasProdutos[p.id] = (p.categoria || 'Geral').trim()
+  })
+
+  // Lista única de categorias para o seletor
+  const listaCategoriasDisponiveis = Array.from(
+    new Set(produtos.map(p => (p.categoria || 'Geral').trim()).filter(Boolean))
+  ).sort()
+
+  // 1. Filtro temporal das vendas
+  const vendasNoPeriodo = vendas.filter(v => {
     if (periodoTipo === 'todos') return true
 
     const dt = new Date(v.created_at)
@@ -110,34 +130,68 @@ export default function Relatorios() {
     return true
   })
 
-  // DRE
+  // 2. Cálculo do DRE e Resumo por Categoria
   let receitaTotal = 0
   let custoTotal = 0
+  let qtdItensTotal = 0
 
-  vendasFiltradas.forEach(v => {
-    const totalCobrado = Number(v.total || 0)
-    receitaTotal += totalCobrado
+  const desempenhoPorCategoria = {}
 
+  vendasNoPeriodo.forEach(v => {
     const itens = Array.isArray(v.itens) ? v.itens : []
+
     itens.forEach(item => {
+      const catItem = mapaCategoriasProdutos[item.produtoId] || 'Geral'
       const qtd = Number(item.quantidade || 1)
+      const precoUnit = Number(item.preco || 0)
       const custoUnit = Number(item.preco_custo || 0)
-      custoTotal += (qtd * custoUnit)
+
+      const subtotalItem = qtd * precoUnit
+      const custoTotalItem = qtd * custoUnit
+
+      // Acúmulo por categoria para a tabela comparativa
+      if (!desempenhoPorCategoria[catItem]) {
+        desempenhoPorCategoria[catItem] = {
+          categoria: catItem,
+          faturamento: 0,
+          custo: 0,
+          qtdPecas: 0
+        }
+      }
+      desempenhoPorCategoria[catItem].faturamento += subtotalItem
+      desempenhoPorCategoria[catItem].custo += custoTotalItem
+      desempenhoPorCategoria[catItem].qtdPecas += qtd
+
+      // Se houver filtro de categoria ativo, computa apenas os itens da categoria escolhida
+      if (categoriaFiltro === 'todas' || catItem.toLowerCase() === categoriaFiltro.toLowerCase()) {
+        receitaTotal += subtotalItem
+        custoTotal += custoTotalItem
+        qtdItensTotal += qtd
+      }
     })
   })
+
+  const listaDesempenhoCategorias = Object.values(desempenhoPorCategoria).sort((a, b) => b.faturamento - a.faturamento)
+  const totalGeralTodasCategorias = listaDesempenhoCategorias.reduce((s, c) => s + c.faturamento, 0)
 
   const lucroBruto = Math.max(0, receitaTotal - custoTotal)
   const margemPercentual = receitaTotal > 0 ? ((lucroBruto / receitaTotal) * 100) : 0
 
-  // Curva ABC
+  // 3. Curva ABC (Produtos Mais Vendidos) respeitando o filtro de categoria
   const mapaProdutos = {}
-  vendasFiltradas.forEach(v => {
+  vendasNoPeriodo.forEach(v => {
     const itens = Array.isArray(v.itens) ? v.itens : []
     itens.forEach(item => {
+      const catItem = mapaCategoriasProdutos[item.produtoId] || 'Geral'
+      if (categoriaFiltro !== 'todas' && catItem.toLowerCase() !== categoriaFiltro.toLowerCase()) {
+        return
+      }
+
       const idProd = item.produtoId || item.nomeProduto
       if (!mapaProdutos[idProd]) {
         mapaProdutos[idProd] = {
           nome: item.nomeProduto,
+          categoria: catItem,
           qtd: 0,
           faturamento: 0
         }
@@ -151,15 +205,17 @@ export default function Relatorios() {
 
   const rankingProdutos = Object.values(mapaProdutos).sort((a, b) => b.faturamento - a.faturamento).slice(0, 8)
 
-  // CÁLCULO PRECISO DE ESTOQUE PARADO
+  // 4. Estoque Parado
   const dataLimiteParado = new Date()
   dataLimiteParado.setDate(dataLimiteParado.getDate() - diasCorteEstoque)
   dataLimiteParado.setHours(23, 59, 59, 999)
 
   const produtosParados = produtos.map(p => {
     if ((p.estoque || 0) <= 0) return null
+    if (categoriaFiltro !== 'todas' && (p.categoria || 'Geral').toLowerCase() !== categoriaFiltro.toLowerCase()) {
+      return null
+    }
 
-    // 1. Procura a venda mais recente deste produto
     const ultimaVenda = vendas.find(v => {
       const itens = Array.isArray(v.itens) ? v.itens : []
       return itens.some(i => i.produtoId === p.id)
@@ -172,17 +228,14 @@ export default function Relatorios() {
       dataReferencia = new Date(ultimaVenda.created_at)
       motivo = 'Sem vendas recentes'
     } else {
-      // Se nunca vendeu, checa a data de criação do produto
       dataReferencia = p.created_at ? new Date(p.created_at) : null
       motivo = 'Cadastrado e nunca vendeu'
     }
 
-    // Se o produto foi cadastrado recentemente (menos que o corte), ele NÃO é estoque parado
     if (!dataReferencia || dataReferencia >= dataLimiteParado) {
       return null
     }
 
-    // Dias exatos sem giro
     const diffTempo = Math.abs(new Date() - dataReferencia)
     const diasSemGiro = Math.floor(diffTempo / (1000 * 60 * 60 * 24))
 
@@ -226,16 +279,21 @@ export default function Relatorios() {
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
 
-        .filter-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 10px; }
+        .filter-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 12px; }
+        .filter-row-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        
         .filter-periodo { display: flex; gap: 6px; flex-wrap: wrap; }
         .btn-p { padding: 7px 14px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .btn-p.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
 
+        .category-select-box { display: flex; align-items: center; gap: 8px; background: #f8fafc; padding: 6px 12px; border-radius: 8px; border: 1px solid #cbd5e1; }
+        .category-select-box label { font-size: 0.75rem; font-weight: 800; color: #475569; text-transform: uppercase; }
+        .category-select-box select { height: 32px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 10px; font-size: 0.85rem; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; }
+
         .custom-dates-bar { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; flex-wrap: wrap; }
         .date-input-group { display: flex; align-items: center; gap: 6px; }
         .date-input-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
-        .date-input-group input { height: 36px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.85rem; color: #0f172a; outline: none; }
-        .date-input-group input:focus { border-color: #2563eb; }
+        .date-input-group input { height: 34px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.85rem; color: #0f172a; outline: none; }
 
         .dre-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
         .dre-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
@@ -263,9 +321,9 @@ export default function Relatorios() {
           .dre-grid { grid-template-columns: 1fr 1fr; }
           .two-cols { grid-template-columns: 1fr; }
         }
-
         @media (max-width: 600px) {
           .dre-grid { grid-template-columns: 1fr; }
+          .filter-row-top { flex-direction: column; align-items: stretch; }
           .custom-dates-bar { flex-direction: column; align-items: stretch; }
           .date-input-group { justify-content: space-between; }
         }
@@ -274,17 +332,31 @@ export default function Relatorios() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Relatórios Gerenciais</h1>
-          <p className="page-subtitle">DRE, Margem de Lucro Real, Curva ABC de vendas e giro de estoque</p>
+          <p className="page-subtitle">DRE, Margem Real, Vendas por Categoria e Giro de Estoque</p>
         </div>
       </div>
 
+      {/* BARRA DE FILTROS (DATA + CATEGORIA) */}
       <div className="filter-container">
-        <div className="filter-periodo">
-          <button className={`btn-p ${periodoTipo === 'hoje' ? 'active' : ''}`} onClick={() => setPeriodoTipo('hoje')}>Hoje</button>
-          <button className={`btn-p ${periodoTipo === '7dias' ? 'active' : ''}`} onClick={() => setPeriodoTipo('7dias')}>Últimos 7 Dias</button>
-          <button className={`btn-p ${periodoTipo === 'mes' ? 'active' : ''}`} onClick={() => setPeriodoTipo('mes')}>Mês Atual</button>
-          <button className={`btn-p ${periodoTipo === 'todos' ? 'active' : ''}`} onClick={() => setPeriodoTipo('todos')}>Todo o Período</button>
-          <button className={`btn-p ${periodoTipo === 'custom' ? 'active' : ''}`} onClick={() => setPeriodoTipo('custom')}>📅 Intervalo Personalizado (De ➔ Até)</button>
+        <div className="filter-row-top">
+          <div className="filter-periodo">
+            <button className={`btn-p ${periodoTipo === 'hoje' ? 'active' : ''}`} onClick={() => setPeriodoTipo('hoje')}>Hoje</button>
+            <button className={`btn-p ${periodoTipo === '7dias' ? 'active' : ''}`} onClick={() => setPeriodoTipo('7dias')}>Últimos 7 Dias</button>
+            <button className={`btn-p ${periodoTipo === 'mes' ? 'active' : ''}`} onClick={() => setPeriodoTipo('mes')}>Mês Atual</button>
+            <button className={`btn-p ${periodoTipo === 'todos' ? 'active' : ''}`} onClick={() => setPeriodoTipo('todos')}>Todo o Período</button>
+            <button className={`btn-p ${periodoTipo === 'custom' ? 'active' : ''}`} onClick={() => setPeriodoTipo('custom')}>📅 Intervalo (De ➔ Até)</button>
+          </div>
+
+          {/* SELETOR DE CATEGORIA */}
+          <div className="category-select-box">
+            <label>Filtrar Categoria:</label>
+            <select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)}>
+              <option value="todas">Todas as Categorias</option>
+              {listaCategoriasDisponiveis.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {periodoTipo === 'custom' && (
@@ -300,7 +372,7 @@ export default function Relatorios() {
             </div>
 
             <span style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: 600, marginLeft: 'auto' }}>
-              ✓ Filtrando de {new Date(`${dataInicio}T12:00:00`).toLocaleDateString('pt-BR')} até {new Date(`${dataFim}T12:00:00`).toLocaleDateString('pt-BR')}
+              ✓ De {new Date(`${dataInicio}T12:00:00`).toLocaleDateString('pt-BR')} até {new Date(`${dataFim}T12:00:00`).toLocaleDateString('pt-BR')} {categoriaFiltro !== 'todas' ? `• Categoria: ${categoriaFiltro}` : ''}
             </span>
           </div>
         )}
@@ -310,11 +382,12 @@ export default function Relatorios() {
         <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Processando inteligência de negócio...</p>
       ) : (
         <>
+          {/* CARDS DRE / LUCRATIVIDADE CALIBRADOS */}
           <div className="dre-grid">
             <div className="dre-card">
-              <span className="dre-title">Faturamento Líquido</span>
+              <span className="dre-title">Faturamento {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : 'Líquido'}</span>
               <span className="dre-val" style={{ color: '#2563eb' }}>R$ {receitaTotal.toFixed(2)}</span>
-              <span className="dre-sub">{vendasFiltradas.length} pedidos no período</span>
+              <span className="dre-sub">{qtdItensTotal} unidades vendidas</span>
             </div>
 
             <div className="dre-card">
@@ -338,15 +411,68 @@ export default function Relatorios() {
             </div>
           </div>
 
+          {/* TABELA: DESEMPENHO POR CATEGORIA */}
+          <div className="card-panel" style={{ marginBottom: '1.5rem' }}>
+            <div className="panel-heading">
+              <span>📊 Desempenho por Categoria no Período</span>
+              <IconTag />
+            </div>
+
+            {listaDesempenhoCategorias.length === 0 ? (
+              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>Nenhuma venda registrada no período selecionado.</p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Categoria</th>
+                      <th style={{ textAlign: 'center' }}>Peças Vendidas</th>
+                      <th style={{ textAlign: 'right' }}>Total Custo (CMV)</th>
+                      <th style={{ textAlign: 'right' }}>Total Faturado</th>
+                      <th style={{ textAlign: 'right' }}>Lucro Bruto</th>
+                      <th style={{ textAlign: 'center' }}>% do Negócio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listaDesempenhoCategorias.map((item, idx) => {
+                      const lucroCat = Math.max(0, item.faturamento - item.custo)
+                      const share = totalGeralTodasCategorias > 0 ? (item.faturamento / totalGeralTodasCategorias) * 100 : 0
+                      const selecionada = categoriaFiltro.toLowerCase() === item.categoria.toLowerCase()
+
+                      return (
+                        <tr key={idx} style={{ background: selecionada ? '#eff6ff' : 'transparent' }}>
+                          <td>
+                            <strong>{item.categoria}</strong>
+                            {selecionada && <span style={{ marginLeft: '6px', fontSize: '0.72rem', color: '#2563eb', fontWeight: 800 }}>● FILTRO ATIVO</span>}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>{item.qtdPecas} un</td>
+                          <td style={{ textAlign: 'right', color: '#64748b' }}>R$ {item.custo.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>R$ {item.faturamento.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>R$ {lucroCat.toFixed(2)}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{ fontWeight: 800, color: share >= 30 ? '#2563eb' : '#64748b' }}>
+                              {share.toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <div className="two-cols">
+            {/* CURVA ABC (PRODUTOS MAIS VENDIDOS) */}
             <div className="card-panel">
               <div className="panel-heading">
-                <span>🏆 Curva ABC: Mais Vendidos</span>
+                <span>🏆 Curva ABC: Mais Vendidos {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : ''}</span>
                 <IconTrendingUp />
               </div>
 
               {rankingProdutos.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>Nenhuma venda registrada no período selecionado.</p>
+                <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>Nenhum produto encontrado no filtro ativo.</p>
               ) : (
                 <table>
                   <thead>
@@ -359,7 +485,10 @@ export default function Relatorios() {
                   <tbody>
                     {rankingProdutos.map((prod, idx) => (
                       <tr key={idx}>
-                        <td><strong>#{idx + 1} {prod.nome}</strong></td>
+                        <td>
+                          <strong>#{idx + 1} {prod.nome}</strong>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{prod.categoria}</div>
+                        </td>
                         <td style={{ textAlign: 'center' }}>{prod.qtd} un</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: '#2563eb' }}>
                           R$ {prod.faturamento.toFixed(2)}
@@ -371,10 +500,10 @@ export default function Relatorios() {
               )}
             </div>
 
-            {/* ALERTA CALIBRADO DE ESTOQUE PARADO */}
+            {/* ALERTA DE ESTOQUE PARADO */}
             <div className="card-panel">
               <div className="panel-heading">
-                <span>⚠️ Alerta de Estoque Parado</span>
+                <span>⚠️ Alerta de Estoque Parado {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : ''}</span>
                 <div className="selector-dias">
                   <span>Sem giro há:</span>
                   <select value={diasCorteEstoque} onChange={e => setDiasCorteEstoque(Number(e.target.value))}>
@@ -389,48 +518,44 @@ export default function Relatorios() {
               {produtosParados.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
                   <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '8px' }}>🎉</span>
-                  <strong style={{ color: '#10b981', display: 'block' }}>Giro de Estoque Saudável!</strong>
+                  <strong style={{ color: '#10b981', display: 'block' }}>Giro Saudável!</strong>
                   <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                    Nenhum produto antigo parado sem vendas há mais de {diasCorteEstoque} dias.
+                    Nenhum produto com saldo sem vendas há mais de {diasCorteEstoque} dias.
                   </span>
                 </div>
               ) : (
-                <>
-                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px' }}>
-                    Peças com estoque físico sem vendas há mais de {diasCorteEstoque} dias (novidades recém-cadastradas não entram aqui).
-                  </p>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Produto Parado</th>
-                        <th>Última Atividade</th>
-                        <th style={{ textAlign: 'center' }}>Parado há</th>
-                        <th style={{ textAlign: 'center' }}>Estoque</th>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Produto</th>
+                      <th>Última Saída</th>
+                      <th style={{ textAlign: 'center' }}>Parado há</th>
+                      <th style={{ textAlign: 'center' }}>Estoque</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {produtosParados.map(prod => (
+                      <tr key={prod.id}>
+                        <td>
+                          <strong>{prod.nome}</strong>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{prod.categoria || 'Geral'}</div>
+                        </td>
+                        <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{prod.dataUltimaAtividade}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span className="badge-warning">{prod.diasSemGiro} dias</span>
+                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                          {prod.estoque} un
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {produtosParados.map(prod => (
-                        <tr key={prod.id}>
-                          <td>
-                            <strong>{prod.nome}</strong>
-                            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{prod.motivo}</div>
-                          </td>
-                          <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{prod.dataUltimaAtividade}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span className="badge-warning">{prod.diasSemGiro} dias</span>
-                          </td>
-                          <td style={{ textAlign: 'center', fontWeight: 700 }}>
-                            {prod.estoque} un
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>
 
+          {/* RADAR DE CLIENTES INATIVOS COM CASHBACK */}
           <div className="card-panel">
             <div className="panel-heading">
               <span>🎯 Radar de Clientes Inativos com Cashback Parado</span>
