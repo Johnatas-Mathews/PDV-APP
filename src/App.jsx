@@ -144,6 +144,7 @@ function MainAppLayout() {
     { to: '/contas-receber', label: 'Contas a Receber', icon: IconContas, chave: 'contas_receber' },
     { to: '/relatorios', label: 'Relatórios', icon: IconRelatorios, chave: 'relatorios' },
     { to: '/configuracoes', label: 'Minha Loja', icon: IconConfig, chave: 'configuracoes' },
+    { to: '/estoque', label: 'Estoque', icon: IconProdutos, chave: 'produtos' },
   ]
 
   const linksVisiveis = todosOsLinks.filter(item => temPermissao(item.chave))
