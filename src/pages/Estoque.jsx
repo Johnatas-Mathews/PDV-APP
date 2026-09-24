@@ -2,19 +2,27 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 
+const IconPrinter = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" />
+  </svg>
+)
+
 export default function Estoque() {
-  const { operador, isAdmin } = useAuth()
+  const { operador } = useAuth()
   const [loading, setLoading] = useState(true)
   const [produtos, setProdutos] = useState([])
   const [variacoes, setVariacoes] = useState([])
   const [movimentacoes, setMovimentacoes] = useState([])
   const [busca, setBusca] = useState('')
-  const [abaAtiva, setAbaAtiva] = useState('catalogo') // 'catalogo' ou 'historico'
+  const [abaAtiva, setAbaAtiva] = useState('catalogo')
 
   // Modal de Ajuste de Saldo
   const [modalAberto, setModalAberto] = useState(false)
-  const [itemSelecionado, setItemSelecionado] = useState(null) // { tipo: 'produto' | 'variacao', id, nome, estoqueAtual, precoCusto }
-  const [tipoOperacao, setTipoOperacao] = useState('entrada') // 'entrada', 'saida', 'balanco'
+  const [itemSelecionado, setItemSelecionado] = useState(null)
+  const [tipoOperacao, setTipoOperacao] = useState('entrada')
   const [quantidadeAjuste, setQuantidadeAjuste] = useState('')
   const [motivo, setMotivo] = useState('Ajuste de Balanço / Inventário')
   const [observacao, setObservacao] = useState('')
@@ -72,7 +80,6 @@ export default function Estoque() {
     }
   })
 
-  // Abrir Modal de Ajuste
   const abrirAjuste = (item) => {
     setItemSelecionado(item)
     setTipoOperacao('entrada')
@@ -82,7 +89,6 @@ export default function Estoque() {
     setModalAberto(true)
   }
 
-  // Gravar Ajuste
   const confirmarAjuste = async (e) => {
     e.preventDefault()
     if (!itemSelecionado) return
@@ -108,7 +114,6 @@ export default function Estoque() {
 
     setSalvando(true)
     try {
-      // 1. Atualiza no produto ou na variação
       if (itemSelecionado.tipo === 'variacao') {
         const { error } = await supabase
           .from('variacoes_grade')
@@ -123,7 +128,6 @@ export default function Estoque() {
         if (error) throw error
       }
 
-      // 2. Grava histórico na tabela estoque_movimentacoes se ela existir
       try {
         await supabase.from('estoque_movimentacoes').insert([{
           produto_id: itemSelecionado.produtoId,
@@ -148,11 +152,50 @@ export default function Estoque() {
     setSalvando(false)
   }
 
-  // Filtro de Busca
-  const produtosFiltrados = produtos.filter(p => {
-    const t = busca.toLowerCase()
-    return p.nome.toLowerCase().includes(t) || (p.codigo_barras && p.codigo_barras.includes(t))
+  // Lista linear de itens para a tabela e para a impressão do inventário
+  const listaItensInventario = []
+  produtos.forEach(prod => {
+    const vars = variacoes.filter(v => v.produto_id === prod.id)
+    if (vars.length > 0) {
+      vars.forEach(v => {
+        listaItensInventario.push({
+          id: `v-${v.id}`,
+          rawId: v.id,
+          produtoId: prod.id,
+          tipo: 'variacao',
+          nome: prod.nome,
+          grade: [v.tamanho, v.cor].filter(Boolean).join(' / ') || 'Variação',
+          codigo: prod.codigo_barras || '-',
+          precoCusto: Number(prod.preco_custo || 0),
+          precoVenda: Number(prod.preco || 0),
+          estoque: Number(v.estoque || 0)
+        })
+      })
+    } else {
+      listaItensInventario.push({
+        id: `p-${prod.id}`,
+        rawId: prod.id,
+        produtoId: prod.id,
+        tipo: 'produto',
+        nome: prod.nome,
+        grade: '-',
+        codigo: prod.codigo_barras || '-',
+        precoCusto: Number(prod.preco_custo || 0),
+        precoVenda: Number(prod.preco || 0),
+        estoque: Number(prod.estoque || 0)
+      })
+    }
   })
+
+  // Filtro de Busca
+  const itensFiltrados = listaItensInventario.filter(item => {
+    const t = busca.toLowerCase()
+    return item.nome.toLowerCase().includes(t) || item.codigo.toLowerCase().includes(t)
+  })
+
+  const acionarImpressao = () => {
+    window.print()
+  }
 
   return (
     <div className="est-wrapper">
@@ -173,8 +216,24 @@ export default function Estoque() {
         .tab-btn { padding: 8px 16px; border: none; background: transparent; font-size: 0.88rem; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; }
         .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
 
-        .search-box { height: 40px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; font-size: 0.9rem; width: 320px; outline: none; }
+        .search-box { height: 40px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; font-size: 0.9rem; width: 280px; outline: none; }
         .search-box:focus { border-color: #2563eb; }
+
+        .btn-print {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          color: #334155;
+          padding: 8px 14px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .btn-print:hover { background: #f8fafc; border-color: #2563eb; color: #2563eb; }
 
         .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
         table { width: 100%; border-collapse: collapse; text-align: left; min-width: 720px; }
@@ -195,6 +254,44 @@ export default function Estoque() {
         .form-group-modal label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
         .form-group-modal input, .form-group-modal select { height: 40px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.92rem; }
 
+        /* CABEÇALHO EXCLUSIVO PARA O PAPEL IMPRESSO */
+        .print-only-header { display: none; }
+
+        /* ESTILOS DE IMPRESSÃO (A4 / PAPEL) */
+        @media print {
+          body * { visibility: hidden; }
+          .est-wrapper, .est-wrapper * { visibility: visible; }
+          .est-wrapper { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+          
+          /* Oculta tudo que não faz parte da folha de contagem */
+          .page-header, .kpi-grid, .tabs-nav, .search-box, .btn-print, .btn-ajustar, .modal-overlay, th:last-child, td:last-child {
+            display: none !important;
+          }
+
+          .card-box { border: none !important; box-shadow: none !important; padding: 0 !important; }
+          
+          .print-only-header {
+            display: block !important;
+            margin-bottom: 1.25rem;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 0.75rem;
+          }
+          .print-title { font-size: 1.4rem; font-weight: 800; color: #000; margin: 0; }
+          .print-meta { font-size: 0.8rem; color: #333; margin-top: 4px; display: flex; justify-content: space-between; }
+
+          table { min-width: 100% !important; font-size: 0.82rem !important; border: 1px solid #000 !important; }
+          th { background: #f1f5f9 !important; color: #000 !important; border: 1px solid #000 !important; padding: 6px !important; }
+          td { border: 1px solid #000 !important; padding: 6px !important; color: #000 !important; }
+
+          .col-contagem {
+            display: table-cell !important;
+            width: 120px !important;
+            text-align: center !important;
+          }
+        }
+
+        .col-contagem { display: none; }
+
         @media (max-width: 900px) {
           .kpi-grid { grid-template-columns: 1fr 1fr; }
         }
@@ -204,11 +301,24 @@ export default function Estoque() {
         }
       `}</style>
 
+      {/* CABEÇALHO QUE SÓ APARECE NA FOLHA IMPRESSA */}
+      <div className="print-only-header">
+        <h1 className="print-title">📋 Folha de Contagem & Conferência de Estoque</h1>
+        <div className="print-meta">
+          <span>Emitido em: {new Date().toLocaleString('pt-BR')} • Operador: {operador?.nome || 'Admin'}</span>
+          <span>Total de Itens Listados: {itensFiltrados.length}</span>
+        </div>
+      </div>
+
       <div className="page-header">
         <div>
           <h1 className="page-title">📦 Gestão de Estoque</h1>
           <p className="page-subtitle">Acompanhamento de patrimônio, inventário e ajustes com rastreabilidade</p>
         </div>
+
+        <button type="button" className="btn-print" onClick={acionarImpressao}>
+          <IconPrinter /> Imprimir Folha de Contagem
+        </button>
       </div>
 
       {/* CARDS DE PATRIMÔNIO */}
@@ -239,10 +349,10 @@ export default function Estoque() {
       </div>
 
       <div className="card-box">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
           <div className="tabs-nav" style={{ marginBottom: 0 }}>
             <button className={`tab-btn ${abaAtiva === 'catalogo' ? 'active' : ''}`} onClick={() => setAbaAtiva('catalogo')}>
-              📋 Catálogo & Saldos Físicos
+              📋 Catálogo & Saldos Físicos ({itensFiltrados.length})
             </button>
             <button className={`tab-btn ${abaAtiva === 'historico' ? 'active' : ''}`} onClick={() => setAbaAtiva('historico')}>
               🕒 Histórico de Movimentações ({movimentacoes.length})
@@ -253,7 +363,7 @@ export default function Estoque() {
             <input 
               type="text" 
               className="search-box" 
-              placeholder="Buscar peça por nome ou código..." 
+              placeholder="Buscar por nome ou código..." 
               value={busca}
               onChange={e => setBusca(e.target.value)}
             />
@@ -267,85 +377,52 @@ export default function Estoque() {
             <table>
               <thead>
                 <tr>
-                  <th>Produto & Variação</th>
+                  <th>Código</th>
+                  <th>Produto</th>
+                  <th>Grade (Tam/Cor)</th>
                   <th>Preço Custo</th>
                   <th>Preço Venda</th>
-                  <th style={{ textAlign: 'center' }}>Saldo em Estoque</th>
+                  <th style={{ textAlign: 'center' }}>Saldo Sistema</th>
+                  <th className="col-contagem">Contagem Física</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'center' }}>Ação</th>
                 </tr>
               </thead>
               <tbody>
-                {produtosFiltrados.map(prod => {
-                  const vars = variacoes.filter(v => v.produto_id === prod.id)
-
-                  if (vars.length > 0) {
-                    return vars.map(v => (
-                      <tr key={`v-${v.id}`}>
-                        <td>
-                          <strong>{prod.nome}</strong>
-                          <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '6px' }}>
-                            ({[v.tamanho, v.cor].filter(Boolean).join(' / ') || 'Variação'})
-                          </span>
-                        </td>
-                        <td>R$ {Number(prod.preco_custo || 0).toFixed(2)}</td>
-                        <td>R$ {Number(prod.preco || 0).toFixed(2)}</td>
-                        <td style={{ textAlign: 'center', fontWeight: 800, fontSize: '1rem' }}>
-                          {v.estoque || 0} un
-                        </td>
-                        <td>
-                          <span className={`badge-status ${(v.estoque || 0) <= 1 ? 'badge-critico' : 'badge-ok'}`}>
-                            {(v.estoque || 0) === 0 ? 'Esgotado' : (v.estoque || 0) <= 1 ? 'Crítico' : 'Normal'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button 
-                            className="btn-ajustar"
-                            onClick={() => abrirAjuste({
-                              tipo: 'variacao',
-                              id: v.id,
-                              produtoId: prod.id,
-                              nome: `${prod.nome} (${[v.tamanho, v.cor].filter(Boolean).join('/')})`,
-                              estoqueAtual: v.estoque || 0
-                            })}
-                          >
-                            ⚡ Ajustar
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  }
-
-                  return (
-                    <tr key={`p-${prod.id}`}>
-                      <td><strong>{prod.nome}</strong></td>
-                      <td>R$ {Number(prod.preco_custo || 0).toFixed(2)}</td>
-                      <td>R$ {Number(prod.preco || 0).toFixed(2)}</td>
-                      <td style={{ textAlign: 'center', fontWeight: 800, fontSize: '1rem' }}>
-                        {prod.estoque || 0} un
-                      </td>
-                      <td>
-                        <span className={`badge-status ${(prod.estoque || 0) <= 1 ? 'badge-critico' : 'badge-ok'}`}>
-                          {(prod.estoque || 0) === 0 ? 'Esgotado' : (prod.estoque || 0) <= 1 ? 'Crítico' : 'Normal'}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button 
-                          className="btn-ajustar"
-                          onClick={() => abrirAjuste({
-                            tipo: 'produto',
-                            id: prod.id,
-                            produtoId: prod.id,
-                            nome: prod.nome,
-                            estoqueAtual: prod.estoque || 0
-                          })}
-                        >
-                          ⚡ Ajustar
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {itensFiltrados.map(item => (
+                  <tr key={item.id}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#475569' }}>{item.codigo}</td>
+                    <td><strong>{item.nome}</strong></td>
+                    <td>{item.grade}</td>
+                    <td>R$ {item.precoCusto.toFixed(2)}</td>
+                    <td>R$ {item.precoVenda.toFixed(2)}</td>
+                    <td style={{ textAlign: 'center', fontWeight: 800, fontSize: '1rem' }}>
+                      {item.estoque} un
+                    </td>
+                    <td className="col-contagem" style={{ textAlign: 'center' }}>
+                      [ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]
+                    </td>
+                    <td>
+                      <span className={`badge-status ${item.estoque <= 1 ? 'badge-critico' : 'badge-ok'}`}>
+                        {item.estoque === 0 ? 'Esgotado' : item.estoque <= 1 ? 'Crítico' : 'Normal'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button 
+                        className="btn-ajustar"
+                        onClick={() => abrirAjuste({
+                          tipo: item.tipo,
+                          id: item.rawId,
+                          produtoId: item.produtoId,
+                          nome: `${item.nome} ${item.grade !== '-' ? `(${item.grade})` : ''}`,
+                          estoqueAtual: item.estoque
+                        })}
+                      >
+                        ⚡ Ajustar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
