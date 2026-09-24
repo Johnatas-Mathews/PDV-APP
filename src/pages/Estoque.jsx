@@ -18,6 +18,9 @@ export default function Estoque() {
   const [movimentacoes, setMovimentacoes] = useState([])
   const [busca, setBusca] = useState('')
   const [abaAtiva, setAbaAtiva] = useState('catalogo')
+  
+  // Filtro interativo acionado pelo clique nos cards
+  const [filtroApenasCriticos, setFiltroApenasCriticos] = useState(false)
 
   // Modal de Ajuste de Saldo
   const [modalAberto, setModalAberto] = useState(false)
@@ -152,7 +155,7 @@ export default function Estoque() {
     setSalvando(false)
   }
 
-  // Lista linear de itens para a tabela e para a impressão do inventário
+  // Lista linear de itens
   const listaItensInventario = []
   produtos.forEach(prod => {
     const vars = variacoes.filter(v => v.produto_id === prod.id)
@@ -187,8 +190,11 @@ export default function Estoque() {
     }
   })
 
-  // Filtro de Busca
+  // Aplicação dos Filtros de Busca e de Card Crítico/Esgotado
   const itensFiltrados = listaItensInventario.filter(item => {
+    if (filtroApenasCriticos && item.estoque > 1) {
+      return false
+    }
     const t = busca.toLowerCase()
     return item.nome.toLowerCase().includes(t) || item.codigo.toLowerCase().includes(t)
   })
@@ -206,10 +212,49 @@ export default function Estoque() {
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
 
         .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-        .kpi-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
-        .kpi-title { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
+        .kpi-card { 
+          background: #ffffff; 
+          border: 1px solid #e2e8f0; 
+          border-radius: 14px; 
+          padding: 1.25rem; 
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          transition: all 0.2s ease;
+          user-select: none;
+        }
+
+        .kpi-card-clickable {
+          cursor: pointer;
+        }
+        .kpi-card-clickable:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 16px -4px rgba(0,0,0,0.08);
+        }
+
+        .kpi-card-active-critico {
+          border-color: #dc2626 !important;
+          background: #fff5f5 !important;
+          box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2) !important;
+        }
+
+        .kpi-card-active-total {
+          border-color: #2563eb !important;
+          background: #f0f7ff !important;
+          box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+        }
+
+        .kpi-title { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between; }
         .kpi-val { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
         .kpi-sub { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+
+        .badge-filtro-ativo {
+          background: #dc2626;
+          color: #fff;
+          font-size: 0.65rem;
+          font-weight: 800;
+          padding: 2px 6px;
+          border-radius: 4px;
+          text-transform: uppercase;
+        }
 
         .card-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
         .tabs-nav { display: flex; gap: 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 1.25rem; }
@@ -263,7 +308,6 @@ export default function Estoque() {
           .est-wrapper, .est-wrapper * { visibility: visible; }
           .est-wrapper { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
           
-          /* Oculta tudo que não faz parte da folha de contagem */
           .page-header, .kpi-grid, .tabs-nav, .search-box, .btn-print, .btn-ajustar, .modal-overlay, th:last-child, td:last-child {
             display: none !important;
           }
@@ -301,12 +345,14 @@ export default function Estoque() {
         }
       `}</style>
 
-      {/* CABEÇALHO QUE SÓ APARECE NA FOLHA IMPRESSA */}
+      {/* CABEÇALHO PARA A FOLHA IMPRESSA */}
       <div className="print-only-header">
-        <h1 className="print-title">📋 Folha de Contagem & Conferência de Estoque</h1>
+        <h1 className="print-title">
+          📋 {filtroApenasCriticos ? 'Relatório de Reposição Crítica & Itens Esgotados' : 'Folha de Contagem & Conferência de Estoque'}
+        </h1>
         <div className="print-meta">
           <span>Emitido em: {new Date().toLocaleString('pt-BR')} • Operador: {operador?.nome || 'Admin'}</span>
-          <span>Total de Itens Listados: {itensFiltrados.length}</span>
+          <span>Total de Itens: {itensFiltrados.length}</span>
         </div>
       </div>
 
@@ -317,114 +363,167 @@ export default function Estoque() {
         </div>
 
         <button type="button" className="btn-print" onClick={acionarImpressao}>
-          <IconPrinter /> Imprimir Folha de Contagem
+          <IconPrinter /> {filtroApenasCriticos ? 'Imprimir Itens Críticos' : 'Imprimir Folha de Contagem'}
         </button>
       </div>
 
-      {/* CARDS DE PATRIMÔNIO */}
+      {/* CARDS DE PATRIMÔNIO INTERATIVOS */}
       <div className="kpi-grid">
-        <div className="kpi-card">
-          <span className="kpi-title">Total de Peças em Loja</span>
+        <div 
+          className={`kpi-card kpi-card-clickable ${!filtroApenasCriticos ? 'kpi-card-active-total' : ''}`}
+          onClick={() => {
+            setAbaAtiva('catalogo')
+            setFiltroApenasCriticos(false)
+          }}
+          title="Clique para ver todo o catálogo"
+        >
+          <div className="kpi-title">
+            <span>Total de Peças em Loja</span>
+            {!filtroApenasCriticos && <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 800 }}>ATIVO</span>}
+          </div>
           <span className="kpi-val" style={{ color: '#2563eb' }}>{totalPecas} un</span>
-          <span className="kpi-sub">Físico em araras e depósito</span>
+          <span className="kpi-sub">Ver todas as peças da loja</span>
         </div>
 
         <div className="kpi-card">
-          <span className="kpi-title">Capital a Custo (CMV)</span>
+          <div className="kpi-title">
+            <span>Capital a Custo (CMV)</span>
+          </div>
           <span className="kpi-val" style={{ color: '#64748b' }}>R$ {custoImobilizado.toFixed(2)}</span>
           <span className="kpi-sub">Total pago pelas peças</span>
         </div>
 
         <div className="kpi-card">
-          <span className="kpi-title">Potencial de Faturamento</span>
+          <div className="kpi-title">
+            <span>Potencial de Faturamento</span>
+          </div>
           <span className="kpi-val" style={{ color: '#16a34a' }}>R$ {potencialVenda.toFixed(2)}</span>
           <span className="kpi-sub">Preço de venda nas etiquetas</span>
         </div>
 
-        <div className="kpi-card">
-          <span className="kpi-title">Itens Críticos / Esgotados</span>
+        {/* CARD CLICÁVEL: FILTRA ITENS CRÍTICOS / ESGOTADOS */}
+        <div 
+          className={`kpi-card kpi-card-clickable ${filtroApenasCriticos ? 'kpi-card-active-critico' : ''}`}
+          onClick={() => {
+            setAbaAtiva('catalogo')
+            setFiltroApenasCriticos(!filtroApenasCriticos)
+          }}
+          title="Clique para filtrar apenas peças esgotadas ou críticas"
+        >
+          <div className="kpi-title">
+            <span>Itens Críticos / Esgotados</span>
+            {filtroApenasCriticos && <span className="badge-filtro-ativo">FILTRADO</span>}
+          </div>
           <span className="kpi-val" style={{ color: itensCriticos > 0 ? '#dc2626' : '#16a34a' }}>{itensCriticos}</span>
-          <span className="kpi-sub">Peças com saldo ≤ 1 un</span>
+          <span className="kpi-sub">
+            {filtroApenasCriticos ? 'Mostrando apenas críticos (clique p/ limpar)' : 'Clique para filtrar peças com saldo ≤ 1 un'}
+          </span>
         </div>
       </div>
 
       <div className="card-box">
-        <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
           <div className="tabs-nav" style={{ marginBottom: 0 }}>
             <button className={`tab-btn ${abaAtiva === 'catalogo' ? 'active' : ''}`} onClick={() => setAbaAtiva('catalogo')}>
-              📋 Catálogo & Saldos Físicos ({itensFiltrados.length})
+              📋 {filtroApenasCriticos ? '⚠️ Apenas Peças Críticas/Esgotadas' : 'Catálogo & Saldos Físicos'} ({itensFiltrados.length})
             </button>
             <button className={`tab-btn ${abaAtiva === 'historico' ? 'active' : ''}`} onClick={() => setAbaAtiva('historico')}>
               🕒 Histórico de Movimentações ({movimentacoes.length})
             </button>
           </div>
 
-          {abaAtiva === 'catalogo' && (
-            <input 
-              type="text" 
-              className="search-box" 
-              placeholder="Buscar por nome ou código..." 
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-            />
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {filtroApenasCriticos && (
+              <button 
+                type="button" 
+                onClick={() => setFiltroApenasCriticos(false)}
+                style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: '0.8rem', fontWeight: 700, padding: '6px 12px', borderRadius: '8px', cursor: 'pointer' }}
+              >
+                ✕ Limpar Filtro Crítico
+              </button>
+            )}
+
+            {abaAtiva === 'catalogo' && (
+              <input 
+                type="text" 
+                className="search-box" 
+                placeholder="Buscar por nome ou código..." 
+                value={busca}
+                onChange={e => setBusca(e.target.value)}
+              />
+            )}
+          </div>
         </div>
 
         {loading ? (
           <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Carregando dados de estoque...</p>
         ) : abaAtiva === 'catalogo' ? (
           <div className="table-responsive">
-            <table>
-              <thead>
-                <tr>
-                  <th>Código</th>
-                  <th>Produto</th>
-                  <th>Grade (Tam/Cor)</th>
-                  <th>Preço Custo</th>
-                  <th>Preço Venda</th>
-                  <th style={{ textAlign: 'center' }}>Saldo Sistema</th>
-                  <th className="col-contagem">Contagem Física</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'center' }}>Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {itensFiltrados.map(item => (
-                  <tr key={item.id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#475569' }}>{item.codigo}</td>
-                    <td><strong>{item.nome}</strong></td>
-                    <td>{item.grade}</td>
-                    <td>R$ {item.precoCusto.toFixed(2)}</td>
-                    <td>R$ {item.precoVenda.toFixed(2)}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 800, fontSize: '1rem' }}>
-                      {item.estoque} un
-                    </td>
-                    <td className="col-contagem" style={{ textAlign: 'center' }}>
-                      [ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]
-                    </td>
-                    <td>
-                      <span className={`badge-status ${item.estoque <= 1 ? 'badge-critico' : 'badge-ok'}`}>
-                        {item.estoque === 0 ? 'Esgotado' : item.estoque <= 1 ? 'Crítico' : 'Normal'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button 
-                        className="btn-ajustar"
-                        onClick={() => abrirAjuste({
-                          tipo: item.tipo,
-                          id: item.rawId,
-                          produtoId: item.produtoId,
-                          nome: `${item.nome} ${item.grade !== '-' ? `(${item.grade})` : ''}`,
-                          estoqueAtual: item.estoque
-                        })}
-                      >
-                        ⚡ Ajustar
-                      </button>
-                    </td>
+            {itensFiltrados.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                <span style={{ fontSize: '2rem', display: 'block', marginBottom: '6px' }}>
+                  {filtroApenasCriticos ? '🎉' : '🔍'}
+                </span>
+                <strong style={{ color: '#0f172a' }}>
+                  {filtroApenasCriticos ? 'Nenhum item com estoque crítico ou esgotado!' : 'Nenhum produto encontrado na busca.'}
+                </strong>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
+                  {filtroApenasCriticos ? 'Todas as suas peças estão com estoque acima de 1 unidade.' : 'Tente buscar por outro termo ou código de barras.'}
+                </p>
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Produto</th>
+                    <th>Grade (Tam/Cor)</th>
+                    <th>Preço Custo</th>
+                    <th>Preço Venda</th>
+                    <th style={{ textAlign: 'center' }}>Saldo Sistema</th>
+                    <th className="col-contagem">Contagem Física</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'center' }}>Ação</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {itensFiltrados.map(item => (
+                    <tr key={item.id} style={{ background: item.estoque === 0 ? '#fff1f2' : 'transparent' }}>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#475569' }}>{item.codigo}</td>
+                      <td><strong>{item.nome}</strong></td>
+                      <td>{item.grade}</td>
+                      <td>R$ {item.precoCusto.toFixed(2)}</td>
+                      <td>R$ {item.precoVenda.toFixed(2)}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 800, fontSize: '1rem', color: item.estoque <= 1 ? '#dc2626' : '#0f172a' }}>
+                        {item.estoque} un
+                      </td>
+                      <td className="col-contagem" style={{ textAlign: 'center' }}>
+                        [ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]
+                      </td>
+                      <td>
+                        <span className={`badge-status ${item.estoque <= 1 ? 'badge-critico' : 'badge-ok'}`}>
+                          {item.estoque === 0 ? 'Esgotado' : item.estoque <= 1 ? 'Crítico' : 'Normal'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button 
+                          className="btn-ajustar"
+                          onClick={() => abrirAjuste({
+                            tipo: item.tipo,
+                            id: item.rawId,
+                            produtoId: item.produtoId,
+                            nome: `${item.nome} ${item.grade !== '-' ? `(${item.grade})` : ''}`,
+                            estoqueAtual: item.estoque
+                          })}
+                        >
+                          ⚡ Ajustar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         ) : (
           <div className="table-responsive">
