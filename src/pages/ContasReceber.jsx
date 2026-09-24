@@ -64,7 +64,7 @@ export default function ContasReceber() {
   const [clientes, setClientes] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
+  const [filtro, setFiltro] = useState('pendente')
   const [busca, setBusca] = useState('')
 
   // Modais de Recebimento
@@ -74,10 +74,10 @@ export default function ContasReceber() {
   const [formaPagamentoInput, setFormaPagamentoInput] = useState('PIX')
   const [salvandoRecebimento, setSalvandoRecebimento] = useState(false)
 
-  // Modal de Comprovante de Pagamento (Visualizar / Imprimir / WhatsApp)
+  // Modal de Comprovante de Pagamento
   const [comprovanteAtual, setComprovanteAtual] = useState(null)
 
-  // Modal Novo Título Manual (Dívidas Antigas)
+  // Modal Novo Título Manual
   const [modalNovoTitulo, setModalNovoTitulo] = useState(false)
   const [clienteSelecionadoObj, setClienteSelecionadoObj] = useState(null)
   const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
@@ -100,7 +100,6 @@ export default function ContasReceber() {
 
       if (cliData) setClientes(cliData)
 
-      // Carrega dados da empresa para os comprovantes
       const { data: cfgData } = await supabase.from('configuracoes').select('*')
       if (cfgData) {
         const mapa = {}
@@ -143,7 +142,6 @@ export default function ContasReceber() {
     carregarDados()
   }, [filtro])
 
-  // Fecha dropdown do cliente se clicar fora
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownCliRef.current && !dropdownCliRef.current.contains(e.target)) {
@@ -234,7 +232,6 @@ export default function ContasReceber() {
 
       if (error) throw error
 
-      // Prepara e abre o modal de comprovante automaticamente
       setComprovanteAtual({
         lojaNome: dadosEmpresa?.nome || 'TECCO',
         lojaTelefone: dadosEmpresa?.telefone || '',
@@ -263,7 +260,6 @@ export default function ContasReceber() {
     setSalvandoRecebimento(false)
   }
 
-  // Disparo do comprovante via WhatsApp
   const enviarComprovanteWhatsApp = (comp) => {
     if (!comp.clienteTelefone) {
       alert('Este cliente não possui telefone cadastrado!')
@@ -294,12 +290,11 @@ export default function ContasReceber() {
     window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
   }
 
-  // Impressão direta do comprovante
   const imprimirComprovante = () => {
     window.print()
   }
 
-  // Gerar segunda via do comprovante direto pelo Histórico
+  // Ao emitir a 2ª via, fecha o histórico para evitar sobreposição
   const emitirComprovanteSegundaVia = (itemHist, contaMae) => {
     const totalOriginal = Number(contaMae.valor || 0)
     const historico = Array.isArray(contaMae.historico_pagamentos) ? contaMae.historico_pagamentos : []
@@ -308,6 +303,8 @@ export default function ContasReceber() {
       .reduce((s, h) => s + Number(h.valor || 0), 0)
 
     const saldoRestante = Math.max(0, totalOriginal - totalPagoAteMomento)
+
+    setContaModalHist(null) // Fecha o histórico
 
     setComprovanteAtual({
       lojaNome: dadosEmpresa?.nome || 'TECCO',
@@ -328,7 +325,6 @@ export default function ContasReceber() {
     })
   }
 
-  // Criar Título Manual para Dívidas Antigas
   const salvarNovoTituloManual = async (e) => {
     e.preventDefault()
 
@@ -509,6 +505,7 @@ export default function ContasReceber() {
         .btn-primary:hover { background: #1d4ed8; }
         
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); padding: 1rem; }
+        .modal-overlay-recibo { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); display: flex; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(3px); padding: 1rem; }
         .modal-card { background: #ffffff; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem; }
         .modal-title { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
@@ -699,7 +696,7 @@ export default function ContasReceber() {
         )}
       </div>
 
-      {/* MODAL NOVO TÍTULO MANUAL COM AUTOCOMPLETE DE CLIENTE */}
+      {/* MODAL NOVO TÍTULO MANUAL */}
       {modalNovoTitulo && (
         <div className="modal-overlay" onClick={() => setModalNovoTitulo(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -832,7 +829,7 @@ export default function ContasReceber() {
         </div>
       )}
 
-      {/* MODAL RECEBER COM SELEÇÃO DE FORMA DE PAGAMENTO */}
+      {/* MODAL RECEBER */}
       {contaModalReceber && (
         <div className="modal-overlay" onClick={() => setContaModalReceber(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -899,9 +896,9 @@ export default function ContasReceber() {
         </div>
       )}
 
-      {/* MODAL COMPROVANTE DE QUITAÇÃO / RECEBIMENTO */}
+      {/* MODAL COMPROVANTE: COM Z-INDEX 200 (SEMPRE NO TOPO ABSOLUTO) */}
       {comprovanteAtual && (
-        <div className="modal-overlay" onClick={() => setComprovanteAtual(null)}>
+        <div className="modal-overlay-recibo" onClick={() => setComprovanteAtual(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
             <div className="modal-header">
               <h3 className="modal-title">🧾 Recibo de Pagamento</h3>
@@ -913,7 +910,6 @@ export default function ContasReceber() {
               </button>
             </div>
 
-            {/* ÁREA DO RECIBO IMPRESSO / VISUAL */}
             <div className="recibo-box recibo-print-area">
               <div className="recibo-header">
                 <h3>{comprovanteAtual.lojaNome.toUpperCase()}</h3>
@@ -974,7 +970,6 @@ export default function ContasReceber() {
               </div>
             </div>
 
-            {/* BOTÕES DE AÇÃO: IMPRIMIR E ENVIAR WHATSAPP */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
               <button 
                 type="button" 
