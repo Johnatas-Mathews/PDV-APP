@@ -45,18 +45,37 @@ const IconSearch = () => (
   </svg>
 )
 
+const IconPrinter = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" />
+  </svg>
+)
+
+const IconWhatsApp = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+  </svg>
+)
+
 export default function ContasReceber() {
   const [contas, setContas] = useState([])
   const [clientes, setClientes] = useState([])
+  const [dadosEmpresa, setDadosEmpresa] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
   const [busca, setBusca] = useState('')
-  
-  // Modais
+
+  // Modais de Recebimento
   const [contaModalHist, setContaModalHist] = useState(null)
   const [contaModalReceber, setContaModalReceber] = useState(null)
   const [valorReceberInput, setValorReceberInput] = useState('')
+  const [formaPagamentoInput, setFormaPagamentoInput] = useState('PIX')
   const [salvandoRecebimento, setSalvandoRecebimento] = useState(false)
+
+  // Modal de Comprovante de Pagamento (Visualizar / Imprimir / WhatsApp)
+  const [comprovanteAtual, setComprovanteAtual] = useState(null)
 
   // Modal Novo Título Manual (Dívidas Antigas)
   const [modalNovoTitulo, setModalNovoTitulo] = useState(false)
@@ -80,6 +99,20 @@ export default function ContasReceber() {
         .order('nome', { ascending: true })
 
       if (cliData) setClientes(cliData)
+
+      // Carrega dados da empresa para os comprovantes
+      const { data: cfgData } = await supabase.from('configuracoes').select('*')
+      if (cfgData) {
+        const mapa = {}
+        cfgData.forEach(c => { mapa[c.chave] = c.valor })
+        setDadosEmpresa({
+          nome: mapa['empresa_nome'] || 'TECCO',
+          documento: mapa['empresa_documento'] || '',
+          telefone: mapa['empresa_telefone'] || '',
+          endereco: mapa['empresa_endereco'] || '',
+          cidade: mapa['empresa_cidade_uf'] || ''
+        })
+      }
 
       let query = supabase
         .from('contas_a_receber')
@@ -121,7 +154,6 @@ export default function ContasReceber() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Clientes filtrados conforme digitação no modal de criação
   const clientesFiltradosBusca = clientes.filter(c => {
     if (!termoBuscaCliente) return true
     const t = termoBuscaCliente.toLowerCase()
@@ -149,6 +181,7 @@ export default function ContasReceber() {
     const restante = Math.max(0, total - pago)
     setContaModalReceber(conta)
     setValorReceberInput(restante.toFixed(2))
+    setFormaPagamentoInput('PIX')
   }
 
   const confirmarRecebimento = async () => {
@@ -171,18 +204,23 @@ export default function ContasReceber() {
 
     setSalvandoRecebimento(true)
 
+    const agoraISO = new Date().toISOString()
+    const novoItemHistorico = {
+      id: Date.now(),
+      data: agoraISO,
+      valor: numRecebido,
+      forma: formaPagamentoInput
+    }
+
     const historicoAtual = Array.isArray(contaModalReceber.historico_pagamentos) 
       ? [...contaModalReceber.historico_pagamentos] 
       : []
 
-    historicoAtual.push({
-      id: Date.now(),
-      data: new Date().toISOString(),
-      valor: numRecebido
-    })
+    historicoAtual.push(novoItemHistorico)
 
     const novoTotalPago = pagoAteAgora + numRecebido
-    const novoStatus = novoTotalPago >= (total - 0.01) ? 'pago' : 'pendente'
+    const novoSaldoRestante = Math.max(0, total - novoTotalPago)
+    const novoStatus = novoSaldoRestante <= 0.01 ? 'pago' : 'pendente'
 
     try {
       const { error } = await supabase
@@ -196,7 +234,25 @@ export default function ContasReceber() {
 
       if (error) throw error
 
-      alert(novoStatus === 'pago' ? 'Conta liquidada com sucesso!' : 'Pagamento parcial registrado!')
+      // Prepara e abre o modal de comprovante automaticamente
+      setComprovanteAtual({
+        lojaNome: dadosEmpresa?.nome || 'TECCO',
+        lojaTelefone: dadosEmpresa?.telefone || '',
+        lojaEndereco: dadosEmpresa?.endereco || '',
+        lojaCidade: dadosEmpresa?.cidade || '',
+        lojaDoc: dadosEmpresa?.documento || '',
+        clienteNome: contaModalReceber.clientes?.nome || 'Cliente',
+        clienteTelefone: contaModalReceber.clientes?.telefone || '',
+        descricao: contaModalReceber.descricao || `Título #${contaModalReceber.id}`,
+        valorPago: numRecebido,
+        valorTotalOriginal: total,
+        totalPagoAcumulado: novoTotalPago,
+        saldoRestante: novoSaldoRestante,
+        statusFinal: novoStatus,
+        formaPagamento: formaPagamentoInput,
+        dataHora: agoraISO
+      })
+
       setContaModalReceber(null)
       setValorReceberInput('')
       await carregarDados()
@@ -205,6 +261,71 @@ export default function ContasReceber() {
     }
 
     setSalvandoRecebimento(false)
+  }
+
+  // Disparo do comprovante via WhatsApp
+  const enviarComprovanteWhatsApp = (comp) => {
+    if (!comp.clienteTelefone) {
+      alert('Este cliente não possui telefone cadastrado!')
+      return
+    }
+
+    const numLimpo = comp.clienteTelefone.replace(/\D/g, '')
+    const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
+
+    const dataFormatada = new Date(comp.dataHora).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+    const statusTxt = comp.saldoRestante <= 0.01 
+      ? '🎉 CONTA 100% QUITADA! Dívida zerada.' 
+      : `Restam R$ ${comp.saldoRestante.toFixed(2)} em aberto.`
+
+    const mensagem = encodeURIComponent(
+      `🧾 *COMPROVANTE DE PAGAMENTO - ${comp.lojaNome.toUpperCase()}*\n\n` +
+      `Olá, *${comp.clienteNome}*! Confirmamos o recebimento do seu pagamento no crediário:\n\n` +
+      `💵 *Valor Recebido:* R$ ${comp.valorPago.toFixed(2)}\n` +
+      `💳 *Forma de Pagamento:* ${comp.formaPagamento}\n` +
+      `📅 *Data/Hora:* ${dataFormatada}\n` +
+      `📄 *Referência:* ${comp.descricao}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `✨ *Situação:* ${statusTxt}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Muito obrigado pela pontualidade e preferência! ✨`
+    )
+
+    window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${mensagem}`, '_blank')
+  }
+
+  // Impressão direta do comprovante
+  const imprimirComprovante = () => {
+    window.print()
+  }
+
+  // Gerar segunda via do comprovante direto pelo Histórico
+  const emitirComprovanteSegundaVia = (itemHist, contaMae) => {
+    const totalOriginal = Number(contaMae.valor || 0)
+    const historico = Array.isArray(contaMae.historico_pagamentos) ? contaMae.historico_pagamentos : []
+    const totalPagoAteMomento = historico
+      .filter(h => new Date(h.data) <= new Date(itemHist.data))
+      .reduce((s, h) => s + Number(h.valor || 0), 0)
+
+    const saldoRestante = Math.max(0, totalOriginal - totalPagoAteMomento)
+
+    setComprovanteAtual({
+      lojaNome: dadosEmpresa?.nome || 'TECCO',
+      lojaTelefone: dadosEmpresa?.telefone || '',
+      lojaEndereco: dadosEmpresa?.endereco || '',
+      lojaCidade: dadosEmpresa?.cidade || '',
+      lojaDoc: dadosEmpresa?.documento || '',
+      clienteNome: contaMae.clientes?.nome || 'Cliente',
+      clienteTelefone: contaMae.clientes?.telefone || '',
+      descricao: contaMae.descricao || `Título #${contaMae.id}`,
+      valorPago: Number(itemHist.valor || 0),
+      valorTotalOriginal: totalOriginal,
+      totalPagoAcumulado: totalPagoAteMomento,
+      saldoRestante: saldoRestante,
+      statusFinal: saldoRestante <= 0.01 ? 'pago' : 'pendente',
+      formaPagamento: itemHist.forma || 'Dinheiro / PIX',
+      dataHora: itemHist.data
+    })
   }
 
   // Criar Título Manual para Dívidas Antigas
@@ -235,7 +356,8 @@ export default function ContasReceber() {
       historicoInicial.push({
         id: Date.now(),
         data: new Date().toISOString(),
-        valor: valPago
+        valor: valPago,
+        forma: 'Lançamento Anterior'
       })
     }
 
@@ -396,12 +518,43 @@ export default function ContasReceber() {
         .form-group-modal { display: flex; flex-direction: column; margin-bottom: 1rem; position: relative; }
         .form-group-modal label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 5px; text-transform: uppercase; }
         .form-group-modal input, .form-group-modal select { height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 0.9rem; color: #0f172a; }
-        .form-group-modal input:focus { outline: none; border-color: #2563eb; }
+        .form-group-modal input:focus, .form-group-modal select:focus { outline: none; border-color: #2563eb; }
 
         .cli-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; z-index: 50; margin-top: 4px; }
         .cli-item { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; }
         .cli-item:hover { background: #eff6ff; }
         .cli-selected-badge { display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px 12px; border-radius: 8px; margin-top: 6px; font-size: 0.88rem; color: #1e40af; }
+
+        /* CUPOM TÉRMICO E RECIBO */
+        .recibo-box {
+          background: #fafaf9;
+          border: 1px dashed #d6d3d1;
+          border-radius: 12px;
+          padding: 1.25rem;
+          font-family: 'Courier New', Courier, monospace;
+          color: #1c1917;
+          margin-bottom: 1.25rem;
+        }
+        .recibo-header { text-align: center; border-bottom: 1px dashed #a8a29e; padding-bottom: 10px; margin-bottom: 10px; }
+        .recibo-header h3 { margin: 0; font-size: 1.15rem; font-weight: 800; }
+        .recibo-row { display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 4px; }
+        .recibo-divider { border-top: 1px dashed #a8a29e; margin: 8px 0; }
+
+        /* ESTILOS DE IMPRESSÃO */
+        @media print {
+          body * { visibility: hidden; }
+          .recibo-print-area, .recibo-print-area * { visibility: visible; }
+          .recibo-print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100% !important;
+            max-width: 80mm !important;
+            margin: 0 auto;
+            padding: 0;
+            font-family: monospace;
+          }
+        }
 
         @media (max-width: 768px) {
           .cr-header { flex-direction: column; align-items: stretch; }
@@ -679,7 +832,7 @@ export default function ContasReceber() {
         </div>
       )}
 
-      {/* MODAL RECEBER */}
+      {/* MODAL RECEBER COM SELEÇÃO DE FORMA DE PAGAMENTO */}
       {contaModalReceber && (
         <div className="modal-overlay" onClick={() => setContaModalReceber(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -701,7 +854,7 @@ export default function ContasReceber() {
               </div>
             </div>
 
-            <div style={{ marginBottom: '1.25rem' }}>
+            <div style={{ marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
                 Valor a Receber Agora (R$):
               </label>
@@ -715,7 +868,17 @@ export default function ContasReceber() {
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <div className="form-group-modal">
+              <label>Forma de Pagamento</label>
+              <select value={formaPagamentoInput} onChange={e => setFormaPagamentoInput(e.target.value)}>
+                <option value="PIX">⚡ PIX</option>
+                <option value="Dinheiro">💵 Dinheiro</option>
+                <option value="Cartão Débito">💳 Cartão Débito</option>
+                <option value="Cartão Crédito">💳 Cartão Crédito</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1.25rem' }}>
               <button 
                 className="btn-action btn-sec" 
                 onClick={() => setContaModalReceber(null)}
@@ -729,14 +892,122 @@ export default function ContasReceber() {
                 disabled={salvandoRecebimento}
                 style={{ background: '#10b981' }}
               >
-                <IconCheck /> {salvandoRecebimento ? 'Salvando...' : 'Confirmar Pagamento'}
+                <IconCheck /> {salvandoRecebimento ? 'Salvando...' : 'Confirmar & Gerar Recibo'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL HISTÓRICO */}
+      {/* MODAL COMPROVANTE DE QUITAÇÃO / RECEBIMENTO */}
+      {comprovanteAtual && (
+        <div className="modal-overlay" onClick={() => setComprovanteAtual(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">🧾 Recibo de Pagamento</h3>
+              <button 
+                onClick={() => setComprovanteAtual(null)} 
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ÁREA DO RECIBO IMPRESSO / VISUAL */}
+            <div className="recibo-box recibo-print-area">
+              <div className="recibo-header">
+                <h3>{comprovanteAtual.lojaNome.toUpperCase()}</h3>
+                {comprovanteAtual.lojaDoc && <div style={{ fontSize: '0.8rem' }}>CNPJ/CPF: {comprovanteAtual.lojaDoc}</div>}
+                {comprovanteAtual.lojaEndereco && <div style={{ fontSize: '0.78rem' }}>{comprovanteAtual.lojaEndereco}</div>}
+                {comprovanteAtual.lojaTelefone && <div style={{ fontSize: '0.78rem' }}>WhatsApp: {comprovanteAtual.lojaTelefone}</div>}
+                <div style={{ fontWeight: 800, marginTop: '6px', fontSize: '0.9rem' }}>COMPROVANTE DE RECEBIMENTO</div>
+              </div>
+
+              <div className="recibo-row">
+                <span>Data/Hora:</span>
+                <span>{new Date(comprovanteAtual.dataHora).toLocaleString('pt-BR')}</span>
+              </div>
+              <div className="recibo-row">
+                <span>Cliente:</span>
+                <span><strong>{comprovanteAtual.clienteNome}</strong></span>
+              </div>
+              {comprovanteAtual.clienteTelefone && (
+                <div className="recibo-row">
+                  <span>Contato:</span>
+                  <span>{comprovanteAtual.clienteTelefone}</span>
+                </div>
+              )}
+              <div className="recibo-row">
+                <span>Referência:</span>
+                <span>{comprovanteAtual.descricao}</span>
+              </div>
+              <div className="recibo-row">
+                <span>Forma:</span>
+                <span>{comprovanteAtual.formaPagamento}</span>
+              </div>
+
+              <div className="recibo-divider" />
+
+              <div className="recibo-row" style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                <span>VALOR PAGO:</span>
+                <span>R$ {comprovanteAtual.valorPago.toFixed(2)}</span>
+              </div>
+
+              <div className="recibo-divider" />
+
+              <div className="recibo-row">
+                <span>Total da Dívida:</span>
+                <span>R$ {comprovanteAtual.valorTotalOriginal.toFixed(2)}</span>
+              </div>
+              <div className="recibo-row">
+                <span>Total Pago Acumulado:</span>
+                <span>R$ {comprovanteAtual.totalPagoAcumulado.toFixed(2)}</span>
+              </div>
+              <div className="recibo-row" style={{ fontWeight: 800, color: comprovanteAtual.saldoRestante <= 0.01 ? '#15803d' : '#c2410c' }}>
+                <span>SALDO RESTANTE:</span>
+                <span>{comprovanteAtual.saldoRestante <= 0.01 ? 'QUITADO (R$ 0,00)' : `R$ ${comprovanteAtual.saldoRestante.toFixed(2)}`}</span>
+              </div>
+
+              <div className="recibo-divider" />
+              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: '#57534e', marginTop: '6px' }}>
+                Agradecemos a sua preferência e pontualidade!
+              </div>
+            </div>
+
+            {/* BOTÕES DE AÇÃO: IMPRIMIR E ENVIAR WHATSAPP */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+              <button 
+                type="button" 
+                className="btn-action"
+                onClick={imprimirComprovante}
+                style={{ justifyContent: 'center', padding: '0.65rem' }}
+              >
+                <IconPrinter /> Imprimir Cupom
+              </button>
+
+              <button 
+                type="button" 
+                className="btn-action"
+                onClick={() => enviarComprovanteWhatsApp(comprovanteAtual)}
+                style={{ background: '#16a34a', justifyContent: 'center', padding: '0.65rem' }}
+              >
+                <IconWhatsApp /> Enviar no Zap
+              </button>
+            </div>
+
+            <button 
+              type="button" 
+              className="btn-action btn-sec" 
+              onClick={() => setComprovanteAtual(null)}
+              style={{ width: '100%', justifyContent: 'center', padding: '0.6rem' }}
+            >
+              Concluir & Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL HISTÓRICO COM REEMISSÃO DE COMPROVANTE */}
       {contaModalHist && (
         <div className="modal-overlay" onClick={() => setContaModalHist(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -760,7 +1031,7 @@ export default function ContasReceber() {
               </div>
             </div>
 
-            <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '1rem' }}>
+            <div style={{ maxHeight: '260px', overflowY: 'auto', marginBottom: '1rem' }}>
               {(!contaModalHist.historico_pagamentos || contaModalHist.historico_pagamentos.length === 0) ? (
                 <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', padding: '1rem' }}>
                   Nenhum pagamento detalhado registrado ainda.
@@ -771,12 +1042,21 @@ export default function ContasReceber() {
                     <div>
                       <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>
                         {new Date(item.data).toLocaleDateString('pt-BR')} às {new Date(item.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {item.forma ? ` • ${item.forma}` : ''}
                       </span>
                       <strong style={{ color: '#16a34a', fontSize: '0.95rem' }}>
                         R$ {Number(item.valor).toFixed(2)}
                       </strong>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
+                      <button 
+                        className="btn-action" 
+                        style={{ padding: '4px 8px', background: '#0284c7' }}
+                        onClick={() => emitirComprovanteSegundaVia(item, contaModalHist)}
+                        title="Emitir comprovante deste pagamento"
+                      >
+                        <IconPrinter /> Recibo
+                      </button>
                       <button 
                         className="btn-action btn-sec" 
                         style={{ padding: '4px 8px' }}
