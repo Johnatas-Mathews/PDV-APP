@@ -61,6 +61,18 @@ const IconCamera = () => (
   </svg>
 )
 
+const IconAlertCircle = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+  </svg>
+)
+
+const IconWhatsApp = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+  </svg>
+)
+
 export default function Vendas() {
   const [produtos, setProdutos] = useState([])
   const [variacoes, setVariacoes] = useState([])
@@ -74,6 +86,11 @@ export default function Vendas() {
   const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
   const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false)
   const dropdownClienteRef = useRef(null)
+
+  // Radar de Crediário do Cliente Selecionado
+  const [pendenciasCliente, setPendenciasCliente] = useState([])
+  const [carregandoPendencias, setCarregandoPendencias] = useState(false)
+  const [modalPendenciasAberto, setModalPendenciasAberto] = useState(false)
 
   const [quantidade, setQuantidade] = useState('1')
   const [itensVenda, setItensVenda] = useState([])
@@ -142,6 +159,37 @@ export default function Vendas() {
   useEffect(() => {
     carregarDados()
   }, [])
+
+  // Buscar contas a receber pendentes sempre que o cliente for selecionado
+  const verificarPendenciasCliente = async (clienteId) => {
+    if (!clienteId) {
+      setPendenciasCliente([])
+      return
+    }
+    setCarregandoPendencias(true)
+    try {
+      const { data, error } = await supabase
+        .from('contas_a_receber')
+        .select('*')
+        .eq('cliente_id', parseInt(clienteId))
+        .eq('status', 'pendente')
+        .order('vencimento', { ascending: true })
+
+      if (error) throw error
+      setPendenciasCliente(data || [])
+    } catch (err) {
+      console.error('Erro ao consultar crediário:', err)
+    }
+    setCarregandoPendencias(false)
+  }
+
+  useEffect(() => {
+    if (clienteSelecionado) {
+      verificarPendenciasCliente(clienteSelecionado)
+    } else {
+      setPendenciasCliente([])
+    }
+  }, [clienteSelecionado])
 
   useEffect(() => {
     const handleClickFora = (e) => {
@@ -353,11 +401,23 @@ export default function Vendas() {
   const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
   const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
 
+  // CÁLCULOS DO RADAR DE CRÉDITO DO CLIENTE
+  const totalPendenteCliente = pendenciasCliente.reduce((sum, c) => {
+    return sum + Math.max(0, Number(c.valor || 0) - Number(c.valor_pago || 0))
+  }, 0)
+
+  const hojeData = new Date()
+  hojeData.setHours(0, 0, 0, 0)
+  const temContaVencida = pendenciasCliente.some(c => {
+    if (!c.vencimento) return false
+    const dVenc = new Date(c.vencimento + 'T00:00:00')
+    return dVenc < hojeData
+  })
+
   const subtotal = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
   const descontoManual = parseFloat(desconto) || 0
   const valorPosDesconto = Math.max(0, subtotal - descontoManual)
 
-  // CÁLCULO PROFISSIONAL DE RESGATE COM TRAVA ANTI-PREJUÍZO (% DO CARRINHO)
   const tetoPermitidoReais = (valorPosDesconto * (limiteAbatimentoCarrinho / 100))
   const valorAbatidoCashback = usarCashback ? Math.min(valorPosDesconto, saldoCashbackDisponivel, tetoPermitidoReais) : 0
   const totalComDesconto = Math.max(0, valorPosDesconto - valorAbatidoCashback)
@@ -455,7 +515,24 @@ export default function Vendas() {
     setItensVenda(itensVenda.filter(item => item.id !== id))
   }
 
-  // FINALIZAÇÃO COM AUDITORIA EM LOTES
+  const enviarAvisoCobrancaZap = (c) => {
+    if (!clienteAtual?.telefone) return alert('Cliente sem telefone cadastrado!')
+    const numLimpo = clienteAtual.telefone.replace(/\D/g, '')
+    const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
+    const saldo = Number(c.valor || 0) - Number(c.valor_pago || 0)
+    const dataVenc = c.vencimento ? new Date(c.vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : 'a combinar'
+
+    const msg = encodeURIComponent(
+      `Olá, ${clienteAtual.nome}! Tudo bem? ✨\n\n` +
+      `Passando para lembrar sobre a sua compra em aberto no crediário:\n` +
+      `📄 *Referência:* ${c.descricao || 'Compra na Loja'}\n` +
+      `💰 *Saldo Pendente:* R$ ${saldo.toFixed(2)}\n` +
+      `📅 *Vencimento:* ${dataVenc}\n\n` +
+      `Ficamos à disposição caso precise tirar dúvidas ou queira a chave PIX para acerto. Abraços!`
+    )
+    window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${msg}`, '_blank')
+  }
+
   const finalizarVenda = async () => {
     if (itensVenda.length === 0) return alert('Adicione produtos à venda.')
     
@@ -495,10 +572,8 @@ export default function Vendas() {
 
       if (erroVenda) throw erroVenda
 
-      // REGISTRO DE FIDELIDADE (LOTES E EXTRATO)
       let saldoFinalCliente = saldoCashbackDisponivel
       if (clienteId) {
-        // 1. Se resgatou bônus, registra o DÉBITO
         if (usarCashback && valorAbatidoCashback > 0) {
           saldoFinalCliente -= valorAbatidoCashback
           await supabase.from('cashback_movimentacoes').insert([{
@@ -512,7 +587,6 @@ export default function Vendas() {
           }])
         }
 
-        // 2. Se gerou novo bônus, registra o CRÉDITO com a data de expiração calculada
         if (novoCashbackGerado > 0) {
           saldoFinalCliente += novoCashbackGerado
           const dataExp = new Date()
@@ -530,7 +604,6 @@ export default function Vendas() {
           }])
         }
 
-        // 3. Atualiza o saldo consolidado no cliente
         await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
       }
 
@@ -564,7 +637,7 @@ export default function Vendas() {
         }
       }
 
-      // Baixa no Estoque
+      // Baixa de estoque
       for (const item of itensVenda) {
         if (item.variacaoId) {
           const v = variacoes.find(x => x.id === item.variacaoId)
@@ -599,6 +672,7 @@ export default function Vendas() {
       setDesconto(0)
       setUsarCashback(false)
       setValorRecebido('')
+      setPendenciasCliente([])
     } catch (err) {
       alert('Erro ao gravar venda: ' + err.message)
     }
@@ -628,6 +702,60 @@ export default function Vendas() {
         .busca-item:hover { background: #eff6ff; }
         .busca-item-title { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
         .busca-item-sub { font-size: 0.75rem; color: #64748b; }
+
+        /* RADAR DE CRÉDITO DO CLIENTE */
+        .radar-box-ok {
+          background: #ecfdf5;
+          border: 1px solid #a7f3d0;
+          border-radius: 10px;
+          padding: 8px 12px;
+          margin-top: 8px;
+          font-size: 0.82rem;
+          color: #065f46;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .radar-box-warning {
+          background: #fffbeb;
+          border: 1px solid #fde68a;
+          border-radius: 10px;
+          padding: 10px 14px;
+          margin-top: 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .radar-box-danger {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 10px;
+          padding: 10px 14px;
+          margin-top: 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .btn-ver-radar {
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 6px;
+          padding: 5px 10px;
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .btn-ver-radar:hover { background: #f8fafc; border-color: #94a3b8; }
 
         .misto-container { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
         .misto-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -727,6 +855,44 @@ export default function Vendas() {
                   </button>
                 )}
               </div>
+
+              {/* RADAR DE CRÉDITO DO CLIENTE SELECIONADO */}
+              {clienteSelecionado && (
+                <div>
+                  {carregandoPendencias ? (
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>
+                      Consultando situação do crediário...
+                    </div>
+                  ) : pendenciasCliente.length === 0 ? (
+                    <div className="radar-box-ok">
+                      <span>🟢</span>
+                      <strong>Crediário Liberado:</strong> Nenhuma pendência em aberto.
+                    </div>
+                  ) : (
+                    <div className={temContaVencida ? 'radar-box-danger' : 'radar-box-warning'}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <IconAlertCircle />
+                        <div>
+                          <strong style={{ fontSize: '0.85rem', color: temContaVencida ? '#b91c1c' : '#92400e', display: 'block' }}>
+                            {pendenciasCliente.length} compra(s) pendente(s) • Total: R$ {totalPendenteCliente.toFixed(2)}
+                          </strong>
+                          <span style={{ fontSize: '0.74rem', color: temContaVencida ? '#dc2626' : '#b45309' }}>
+                            {temContaVencida ? '⚠️ Possui parcelas vencidas no crediário!' : 'Todas dentro do prazo de vencimento.'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button 
+                        type="button" 
+                        className="btn-ver-radar"
+                        onClick={() => setModalPendenciasAberto(true)}
+                      >
+                        👁️ Ver Detalhes ({pendenciasCliente.length})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {mostrarDropdownCliente && (
                 <div className="busca-dropdown">
@@ -1046,6 +1212,97 @@ export default function Vendas() {
                 style={{ gap: '8px' }}
               >
                 <IconCheck /> {salvando ? 'Processando...' : 'Finalizar Venda'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DETALHES DE PENDÊNCIAS DO CLIENTE */}
+      {modalPendenciasAberto && (
+        <div className="modal-overlay" onClick={() => setModalPendenciasAberto(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a' }}>Dívidas de {clienteAtual?.nome}</h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                  Total Pendente no Crediário: <strong style={{ color: '#dc2626' }}>R$ {totalPendenteCliente.toFixed(2)}</strong>
+                </span>
+              </div>
+              <button onClick={() => setModalPendenciasAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+            </div>
+
+            <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+              {pendenciasCliente.map(c => {
+                const total = Number(c.valor || 0)
+                const pago = Number(c.valor_pago || 0)
+                const saldo = Math.max(0, total - pago)
+                const dVenc = c.vencimento ? new Date(c.vencimento + 'T00:00:00') : null
+                const vencida = dVenc && dVenc < hojeData
+
+                return (
+                  <div key={c.id} style={{
+                    background: vencida ? '#fff1f2' : '#f8fafc',
+                    border: `1px solid ${vencida ? '#fecdd3' : '#e2e8f0'}`,
+                    borderRadius: '10px',
+                    padding: '10px 14px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <strong style={{ fontSize: '0.9rem', color: '#0f172a', display: 'block' }}>
+                        {c.descricao || `Conta #${c.id}`}
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: vencida ? '#e11d48' : '#64748b', fontWeight: vencida ? 700 : 500 }}>
+                        {vencida ? '⚠️ Vencida em: ' : 'Vencimento: '}
+                        {dVenc ? dVenc.toLocaleDateString('pt-BR') : 'Sem data definida'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block' }}>Total R$ {total.toFixed(2)}</span>
+                        <strong style={{ fontSize: '1rem', color: vencida ? '#e11d48' : '#ea580c' }}>
+                          R$ {saldo.toFixed(2)}
+                        </strong>
+                      </div>
+
+                      {clienteAtual?.telefone && (
+                        <button
+                          type="button"
+                          onClick={() => enviarAvisoCobrancaZap(c)}
+                          style={{
+                            background: '#dcfce7',
+                            border: '1px solid #bbf7d0',
+                            borderRadius: '8px',
+                            color: '#15803d',
+                            padding: '6px 8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700
+                          }}
+                          title="Enviar lembrete amigável desta conta no WhatsApp"
+                        >
+                          <IconWhatsApp /> Zap
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary"
+                onClick={() => setModalPendenciasAberto(false)}
+              >
+                Fechar
               </button>
             </div>
           </div>
