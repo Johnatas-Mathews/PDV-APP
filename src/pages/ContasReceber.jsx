@@ -59,25 +59,45 @@ const IconWhatsApp = () => (
   </svg>
 )
 
+const IconLayers = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
+  </svg>
+)
+
 export default function ContasReceber() {
   const [contas, setContas] = useState([])
   const [clientes, setClientes] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [filtro, setFiltro] = useState('pendente')
+  const [filtro, setFiltro] = useState('pendente') // 'todas', 'pendente', 'pago'
   const [busca, setBusca] = useState('')
 
-  // Modais de Recebimento
+  // Modais de Recebimento Individual
   const [contaModalHist, setContaModalHist] = useState(null)
   const [contaModalReceber, setContaModalReceber] = useState(null)
   const [valorReceberInput, setValorReceberInput] = useState('')
   const [formaPagamentoInput, setFormaPagamentoInput] = useState('PIX')
   const [salvandoRecebimento, setSalvandoRecebimento] = useState(false)
 
-  // Modal de Comprovante de Pagamento
+  // Modal de Comprovante de Pagamento (Visualizar / Imprimir / WhatsApp)
   const [comprovanteAtual, setComprovanteAtual] = useState(null)
 
-  // Modal Novo Título Manual
+  // Modal Recebimento em Cascata (Global por Cliente)
+  const [modalGlobalAberto, setModalGlobalAberto] = useState(false)
+  const [clienteGlobalSelecionado, setClienteGlobalSelecionado] = useState(null)
+  const [valorGlobalInput, setValorGlobalInput] = useState('')
+  const [formaGlobalInput, setFormaGlobalInput] = useState('PIX')
+  const [salvandoGlobal, setSalvandoGlobal] = useState(false)
+
+  // Modal Unificar Títulos (Renegociação)
+  const [modalUnificarAberto, setModalUnificarAberto] = useState(false)
+  const [clienteUnificarSelecionado, setClienteUnificarSelecionado] = useState(null)
+  const [novoVencimentoUnificado, setNovoVencimentoUnificado] = useState('')
+  const [novaDescricaoUnificada, setNovaDescricaoUnificada] = useState('')
+  const [salvandoUnificacao, setSalvandoUnificacao] = useState(false)
+
+  // Modal Novo Título Manual (Dívidas Antigas)
   const [modalNovoTitulo, setModalNovoTitulo] = useState(false)
   const [clienteSelecionadoObj, setClienteSelecionadoObj] = useState(null)
   const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
@@ -115,7 +135,7 @@ export default function ContasReceber() {
 
       let query = supabase
         .from('contas_a_receber')
-        .select('*, clientes(nome, telefone)')
+        .select('*, clientes(id, nome, telefone)')
         .order('vencimento', { ascending: true })
 
       if (filtro !== 'todas') {
@@ -173,6 +193,7 @@ export default function ContasReceber() {
     setTermoBuscaCliente('')
   }
 
+  // Recebimento Individual
   const abrirModalRecebimento = (conta) => {
     const total = Number(conta.valor || 0)
     const pago = Number(conta.valor_pago || 0)
@@ -260,6 +281,208 @@ export default function ContasReceber() {
     setSalvandoRecebimento(false)
   }
 
+  // RECEBIMENTO EM CASCATA (AMORTIZAÇÃO INTELIGENTE DE MÚLTIPLAS CONTAS)
+  const abrirRecebimentoGlobal = (clienteId) => {
+    const contasDoCli = contas.filter(c => c.cliente_id === clienteId && c.status === 'pendente')
+    if (contasDoCli.length === 0) return alert('Nenhuma conta pendente para este cliente.')
+
+    const cliObj = contasDoCli[0]?.clientes
+    const totalDevido = contasDoCli.reduce((sum, c) => sum + (Number(c.valor || 0) - Number(c.valor_pago || 0)), 0)
+
+    setClienteGlobalSelecionado({
+      id: clienteId,
+      nome: cliObj?.nome || 'Cliente',
+      telefone: cliObj?.telefone || '',
+      contas: contasDoCli,
+      totalDevido
+    })
+    setValorGlobalInput(totalDevido.toFixed(2))
+    setFormaGlobalInput('PIX')
+    setModalGlobalAberto(true)
+  }
+
+  const confirmarRecebimentoGlobal = async () => {
+    if (!clienteGlobalSelecionado) return
+
+    const valorTotalRecebido = parseFloat(String(valorGlobalInput).replace(',', '.'))
+    if (isNaN(valorTotalRecebido) || valorTotalRecebido <= 0) {
+      return alert('Informe um valor de pagamento válido.')
+    }
+
+    if (valorTotalRecebido > (clienteGlobalSelecionado.totalDevido + 0.01)) {
+      return alert(`O valor informado (R$ ${valorTotalRecebido.toFixed(2)}) é maior que a dívida total (R$ ${clienteGlobalSelecionado.totalDevido.toFixed(2)})!`)
+    }
+
+    setSalvandoGlobal(true)
+    const agoraISO = new Date().toISOString()
+    let saldoDisponivelParaAbater = valorTotalRecebido
+    const contasAtualizadas = []
+
+    try {
+      // Ordena por vencimento para pagar primeiro as contas mais antigas
+      const contasOrdenadas = [...clienteGlobalSelecionado.contas].sort((a, b) => {
+        const d1 = a.vencimento ? new Date(a.vencimento) : new Date('2099-12-31')
+        const d2 = b.vencimento ? new Date(b.vencimento) : new Date('2099-12-31')
+        return d1 - d2
+      })
+
+      for (const conta of contasOrdenadas) {
+        if (saldoDisponivelParaAbater <= 0) break
+
+        const valorTotalConta = Number(conta.valor || 0)
+        const pagoAteAgora = Number(conta.valor_pago || 0)
+        const restanteDestaConta = Math.max(0, valorTotalConta - pagoAteAgora)
+
+        if (restanteDestaConta <= 0) continue
+
+        const valorAbatidoNesta = Math.min(saldoDisponivelParaAbater, restanteDestaConta)
+        const novoTotalPagoConta = pagoAteAgora + valorAbatidoNesta
+        const novoStatusConta = novoTotalPagoConta >= (valorTotalConta - 0.01) ? 'pago' : 'pendente'
+
+        const hist = Array.isArray(conta.historico_pagamentos) ? [...conta.historico_pagamentos] : []
+        hist.push({
+          id: Date.now() + Math.random(),
+          data: agoraISO,
+          valor: valorAbatidoNesta,
+          forma: formaGlobalInput,
+          obs: 'Amortização Global em Cascata'
+        })
+
+        const { error } = await supabase
+          .from('contas_a_receber')
+          .update({
+            valor_pago: novoTotalPagoConta,
+            historico_pagamentos: hist,
+            status: novoStatusConta
+          })
+          .eq('id', conta.id)
+
+        if (error) throw error
+
+        contasAtualizadas.push({
+          id: conta.id,
+          descricao: conta.descricao,
+          abatido: valorAbatidoNesta
+        })
+
+        saldoDisponivelParaAbater -= valorAbatidoNesta
+      }
+
+      const saldoRestanteGeral = Math.max(0, clienteGlobalSelecionado.totalDevido - valorTotalRecebido)
+
+      // Abre comprovante consolidado
+      setComprovanteAtual({
+        lojaNome: dadosEmpresa?.nome || 'TECCO',
+        lojaTelefone: dadosEmpresa?.telefone || '',
+        lojaEndereco: dadosEmpresa?.endereco || '',
+        lojaCidade: dadosEmpresa?.cidade || '',
+        lojaDoc: dadosEmpresa?.documento || '',
+        clienteNome: clienteGlobalSelecionado.nome,
+        clienteTelefone: clienteGlobalSelecionado.telefone,
+        descricao: `Abatimento Consolidado (${contasAtualizadas.length} faturas)`,
+        valorPago: valorTotalRecebido,
+        valorTotalOriginal: clienteGlobalSelecionado.totalDevido,
+        totalPagoAcumulado: valorTotalRecebido,
+        saldoRestante: saldoRestanteGeral,
+        statusFinal: saldoRestanteGeral <= 0.01 ? 'pago' : 'pendente',
+        formaPagamento: formaGlobalInput,
+        dataHora: agoraISO
+      })
+
+      setModalGlobalAberto(false)
+      await carregarDados()
+    } catch (err) {
+      alert('Erro na amortização em cascata: ' + err.message)
+    }
+    setSalvandoGlobal(false)
+  }
+
+  // UNIFICAÇÃO DE TÍTULOS (RENEGOCIAÇÃO EM 1 ÚNICA CONTA)
+  const abrirUnificacao = (clienteId) => {
+    const contasDoCli = contas.filter(c => c.cliente_id === clienteId && c.status === 'pendente')
+    if (contasDoCli.length < 2) {
+      return alert('Este cliente possui apenas 1 conta pendente. A unificação exige pelo menos 2 contas.')
+    }
+
+    const cliObj = contasDoCli[0]?.clientes
+    const totalSaldo = contasDoCli.reduce((sum, c) => sum + (Number(c.valor || 0) - Number(c.valor_pago || 0)), 0)
+
+    const dataVencPadrao = new Date()
+    dataVencPadrao.setDate(dataVencPadrao.getDate() + 30)
+
+    setClienteUnificarSelecionado({
+      id: clienteId,
+      nome: cliObj?.nome || 'Cliente',
+      contas: contasDoCli,
+      totalSaldo
+    })
+    setNovaDescricaoUnificada(`Renegociação Consolidada (${contasDoCli.length} compras antigas)`)
+    setNovoVencimentoUnificado(dataVencPadrao.toISOString().split('T')[0])
+    setModalUnificarAberto(true)
+  }
+
+  const confirmarUnificacao = async () => {
+    if (!clienteUnificarSelecionado) return
+
+    if (!confirm(`Deseja realmente unificar as ${clienteUnificarSelecionado.contas.length} faturas de ${clienteUnificarSelecionado.nome} em um único título de R$ ${clienteUnificarSelecionado.totalSaldo.toFixed(2)}?`)) {
+      return
+    }
+
+    setSalvandoUnificacao(true)
+    const agoraISO = new Date().toISOString()
+
+    try {
+      // 1. Cria o novo título consolidado
+      const { error: erroNovo } = await supabase
+        .from('contas_a_receber')
+        .insert([{
+          cliente_id: clienteUnificarSelecionado.id,
+          descricao: novaDescricaoUnificada.trim() || 'Renegociação de Dívidas',
+          valor: clienteUnificarSelecionado.totalSaldo,
+          valor_pago: 0,
+          vencimento: novoVencimentoUnificado || null,
+          status: 'pendente',
+          historico_pagamentos: [{
+            id: Date.now(),
+            data: agoraISO,
+            valor: 0,
+            forma: 'Unificação',
+            obs: `Originado da unificação de ${clienteUnificarSelecionado.contas.length} faturas antigas`
+          }]
+        }])
+
+      if (erroNovo) throw erroNovo
+
+      // 2. Marca as contas antigas como renegociadas/quitadas
+      for (const conta of clienteUnificarSelecionado.contas) {
+        const histAntigo = Array.isArray(conta.historico_pagamentos) ? [...conta.historico_pagamentos] : []
+        histAntigo.push({
+          id: Date.now() + Math.random(),
+          data: agoraISO,
+          valor: 0,
+          forma: 'Unificação',
+          obs: 'Substituído e unificado em novo título único'
+        })
+
+        await supabase
+          .from('contas_a_receber')
+          .update({
+            status: 'pago',
+            valor_pago: Number(conta.valor || 0),
+            historico_pagamentos: histAntigo
+          })
+          .eq('id', conta.id)
+      }
+
+      alert(`Sucesso! As ${clienteUnificarSelecionado.contas.length} contas foram agrupadas em 1 único título de R$ ${clienteUnificarSelecionado.totalSaldo.toFixed(2)}.`)
+      setModalUnificarAberto(false)
+      await carregarDados()
+    } catch (err) {
+      alert('Erro ao unificar contas: ' + err.message)
+    }
+    setSalvandoUnificacao(false)
+  }
+
   const enviarComprovanteWhatsApp = (comp) => {
     if (!comp.clienteTelefone) {
       alert('Este cliente não possui telefone cadastrado!')
@@ -294,7 +517,6 @@ export default function ContasReceber() {
     window.print()
   }
 
-  // Ao emitir a 2ª via, fecha o histórico para evitar sobreposição
   const emitirComprovanteSegundaVia = (itemHist, contaMae) => {
     const totalOriginal = Number(contaMae.valor || 0)
     const historico = Array.isArray(contaMae.historico_pagamentos) ? contaMae.historico_pagamentos : []
@@ -304,7 +526,7 @@ export default function ContasReceber() {
 
     const saldoRestante = Math.max(0, totalOriginal - totalPagoAteMomento)
 
-    setContaModalHist(null) // Fecha o histórico
+    setContaModalHist(null)
 
     setComprovanteAtual({
       lojaNome: dadosEmpresa?.nome || 'TECCO',
@@ -468,6 +690,12 @@ export default function ContasReceber() {
     .filter(c => c.status === 'pendente')
     .reduce((sum, c) => sum + (Number(c.valor || 0) - Number(c.valor_pago || 0)), 0)
 
+  // Mapa de Clientes com Contas Pendentes Múltiplas para Destaque
+  const contagemPendenciasPorCliente = {}
+  contas.filter(c => c.status === 'pendente' && c.cliente_id).forEach(c => {
+    contagemPendenciasPorCliente[c.cliente_id] = (contagemPendenciasPorCliente[c.cliente_id] || 0) + 1
+  })
+
   return (
     <div className="cr-wrapper">
       <style>{`
@@ -489,7 +717,7 @@ export default function ContasReceber() {
         .search-box-cr input { border: none; outline: none; width: 100%; font-size: 0.88rem; color: #0f172a; background: transparent; }
         
         .table-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: 0 1px 3px rgba(0,0,0,0.02); width: 100%; }
-        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 820px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 860px; }
         th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1.25rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
         td { padding: 1rem 1.25rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; white-space: nowrap; }
         tbody tr:hover { background: #f8fafc; }
@@ -501,6 +729,8 @@ export default function ContasReceber() {
         .btn-action:hover { background: #1d4ed8; }
         .btn-sec { background: #f1f5f9; color: #475569; }
         .btn-sec:hover { background: #e2e8f0; color: #0f172a; }
+        .btn-warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        .btn-warning:hover { background: #fde68a; }
         .btn-primary { background: #2563eb; color: #ffffff; padding: 0.65rem 1.2rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
         .btn-primary:hover { background: #1d4ed8; }
         
@@ -522,7 +752,7 @@ export default function ContasReceber() {
         .cli-item:hover { background: #eff6ff; }
         .cli-selected-badge { display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px 12px; border-radius: 8px; margin-top: 6px; font-size: 0.88rem; color: #1e40af; }
 
-        /* CUPOM TÉRMICO E RECIBO */
+        /* RECIBO */
         .recibo-box {
           background: #fafaf9;
           border: 1px dashed #d6d3d1;
@@ -537,7 +767,6 @@ export default function ContasReceber() {
         .recibo-row { display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 4px; }
         .recibo-divider { border-top: 1px dashed #a8a29e; margin: 8px 0; }
 
-        /* ESTILOS DE IMPRESSÃO */
         @media print {
           body * { visibility: hidden; }
           .recibo-print-area, .recibo-print-area * { visibility: visible; }
@@ -564,7 +793,7 @@ export default function ContasReceber() {
       <div className="cr-header">
         <div>
           <h1 className="cr-title">Contas a Receber</h1>
-          <p className="cr-subtitle">Gestão de crediário, entradas e histórico de pagamentos</p>
+          <p className="cr-subtitle">Gestão de crediário, amortização global e histórico de recebimentos</p>
         </div>
 
         <div className="header-actions">
@@ -647,6 +876,7 @@ export default function ContasReceber() {
                 const pago = Number(conta.valor_pago || 0)
                 const saldo = Math.max(0, total - pago)
                 const isPendente = conta.status === 'pendente'
+                const qtdPendenciasDoCli = conta.cliente_id ? (contagemPendenciasPorCliente[conta.cliente_id] || 0) : 0
 
                 return (
                   <tr key={conta.id}>
@@ -654,6 +884,13 @@ export default function ContasReceber() {
                       <div><strong>{conta.clientes?.nome || 'Não identificado'}</strong></div>
                       {conta.clientes?.telefone && (
                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{conta.clientes.telefone}</span>
+                      )}
+                      {isPendente && qtdPendenciasDoCli > 1 && (
+                        <div style={{ marginTop: '4px' }}>
+                          <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                            {qtdPendenciasDoCli} faturas abertas
+                          </span>
+                        </div>
                       )}
                     </td>
                     <td>{conta.descricao || `Título #${conta.id}`}</td>
@@ -675,10 +912,31 @@ export default function ContasReceber() {
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         {isPendente && (
-                          <button className="btn-action" onClick={() => abrirModalRecebimento(conta)}>
+                          <button className="btn-action" onClick={() => abrirModalRecebimento(conta)} title="Receber apenas esta fatura">
                             <IconCheck /> Receber
                           </button>
                         )}
+
+                        {/* ATALHOS PARA CLIENTES COM MÚLTIPLAS CONTAS */}
+                        {isPendente && qtdPendenciasDoCli > 1 && (
+                          <>
+                            <button 
+                              className="btn-action btn-warning" 
+                              onClick={() => abrirRecebimentoGlobal(conta.cliente_id)}
+                              title="Abater valor em cascata entre todas as compras deste cliente"
+                            >
+                              ⚡ Abater Tudo
+                            </button>
+                            <button 
+                              className="btn-action btn-sec" 
+                              onClick={() => abrirUnificacao(conta.cliente_id)}
+                              title="Juntar todas as contas deste cliente em 1 única promissória"
+                            >
+                              <IconLayers /> Unificar
+                            </button>
+                          </>
+                        )}
+
                         <button 
                           className="btn-action btn-sec" 
                           onClick={() => setContaModalHist(conta)}
@@ -696,151 +954,132 @@ export default function ContasReceber() {
         )}
       </div>
 
-      {/* MODAL NOVO TÍTULO MANUAL */}
-      {modalNovoTitulo && (
-        <div className="modal-overlay" onClick={() => setModalNovoTitulo(false)}>
+      {/* MODAL RECEBIMENTO GLOBAL EM CASCATA */}
+      {modalGlobalAberto && clienteGlobalSelecionado && (
+        <div className="modal-overlay" onClick={() => setModalGlobalAberto(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Lançar Dívida / Saldo Antigo</h3>
-              <button 
-                onClick={() => setModalNovoTitulo(false)} 
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
-              >
-                ✕
-              </button>
+              <div>
+                <h3 className="modal-title">⚡ Amortização Global (Em Cascata)</h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Cliente: <strong>{clienteGlobalSelecionado.nome}</strong></span>
+              </div>
+              <button onClick={() => setModalGlobalAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px' }}>✕</button>
             </div>
 
-            <form onSubmit={salvarNovoTituloManual}>
-              <div className="form-group-modal" ref={dropdownCliRef}>
-                <label>Pesquisar Cliente (Digite o Nome, Telefone ou CPF)</label>
-                {!clienteSelecionadoObj ? (
-                  <>
-                    <input 
-                      type="text"
-                      placeholder="Ex: Maria, Carlos, (11) 98..."
-                      value={termoBuscaCliente}
-                      onChange={e => { setTermoBuscaCliente(e.target.value); setMostrarDropdownCli(true); }}
-                      onFocus={() => setMostrarDropdownCli(true)}
-                      required
-                    />
-
-                    {mostrarDropdownCli && (
-                      <div className="cli-dropdown">
-                        {clientesFiltradosBusca.length === 0 ? (
-                          <div style={{ padding: '10px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
-                            Nenhum cliente encontrado.
-                          </div>
-                        ) : (
-                          clientesFiltradosBusca.map(c => (
-                            <div 
-                              key={c.id} 
-                              className="cli-item"
-                              onClick={() => selecionarCliente(c)}
-                            >
-                              <strong>{c.nome}</strong>
-                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{c.telefone || c.cpf || ''}</span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="cli-selected-badge">
-                    <div>
-                      <strong>{clienteSelecionadoObj.nome}</strong>
-                      {clienteSelecionadoObj.telefone && <span style={{ marginLeft: '8px', fontSize: '0.8rem', opacity: 0.85 }}>({clienteSelecionadoObj.telefone})</span>}
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={limparSelecaoCliente}
-                      style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}
-                      title="Trocar cliente"
-                    >
-                      ✕ Trocar
-                    </button>
-                  </div>
-                )}
+            <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', padding: '12px', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.85rem', color: '#92400e', marginBottom: '4px' }}>
+                Este cliente possui <strong>{clienteGlobalSelecionado.contas.length} faturas abertas</strong>.
               </div>
-
-              <div className="form-group-modal">
-                <label>Descrição do Saldo / Referência</label>
-                <input 
-                  type="text" 
-                  placeholder="Ex: Saldo antigo de roupas / Caderno 2024"
-                  value={novaDescricao}
-                  onChange={e => setNovaDescricao(e.target.value)}
-                />
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#b45309' }}>
+                Saldo Devedor Total: R$ {clienteGlobalSelecionado.totalDevido.toFixed(2)}
               </div>
+              <p style={{ fontSize: '0.75rem', color: '#78350f', marginTop: '6px' }}>
+                O valor informado será distribuído automaticamente: quitará primeiro as compras mais antigas e abaterá o que sobrar na fatura seguinte.
+              </p>
+            </div>
 
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div className="form-group-modal" style={{ flex: 1 }}>
-                  <label>Valor Total da Dívida (R$)</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0,00"
-                    value={novoValorTotal}
-                    onChange={e => setNovoValorTotal(e.target.value)}
-                    required
-                  />
-                </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Valor Total que o Cliente está Pagando (R$):
+              </label>
+              <input 
+                type="number" 
+                step="0.01"
+                className="input-money"
+                value={valorGlobalInput}
+                onChange={e => setValorGlobalInput(e.target.value)}
+                autoFocus
+              />
+            </div>
 
-                <div className="form-group-modal" style={{ flex: 1 }}>
-                  <label>Já Pago no Passado (R$)</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0,00"
-                    value={novoValorPago}
-                    onChange={e => setNovoValorPago(e.target.value)}
-                  />
-                </div>
-              </div>
+            <div className="form-group-modal">
+              <label>Forma de Pagamento</label>
+              <select value={formaGlobalInput} onChange={e => setFormaGlobalInput(e.target.value)}>
+                <option value="PIX">⚡ PIX</option>
+                <option value="Dinheiro">💵 Dinheiro</option>
+                <option value="Cartão Débito">💳 Cartão Débito</option>
+                <option value="Cartão Crédito">💳 Cartão Crédito</option>
+              </select>
+            </div>
 
-              <div className="form-group-modal">
-                <label>Data de Vencimento / Combinada</label>
-                <input 
-                  type="date" 
-                  value={novoVencimento}
-                  onChange={e => setNovoVencimento(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1rem' }}>
-                <button 
-                  type="button" 
-                  className="btn-action btn-sec" 
-                  onClick={() => setModalNovoTitulo(false)}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn-action" 
-                  disabled={salvandoNovoTitulo}
-                  style={{ background: '#2563eb', padding: '0.6rem 1.2rem' }}
-                >
-                  {salvandoNovoTitulo ? 'Salvando...' : 'Salvar Saldo Devedor'}
-                </button>
-              </div>
-            </form>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1.25rem' }}>
+              <button className="btn-action btn-sec" onClick={() => setModalGlobalAberto(false)}>Cancelar</button>
+              <button 
+                className="btn-action" 
+                onClick={confirmarRecebimentoGlobal}
+                disabled={salvandoGlobal}
+                style={{ background: '#10b981' }}
+              >
+                {salvandoGlobal ? 'Distribuindo...' : 'Confirmar & Emitir Recibo Único'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* MODAL RECEBER */}
+      {/* MODAL UNIFICAR TÍTULOS (RENEGOCIAÇÃO) */}
+      {modalUnificarAberto && clienteUnificarSelecionado && (
+        <div className="modal-overlay" onClick={() => setModalUnificarAberto(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title">🔗 Unificar Títulos em 1 Só</h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Cliente: <strong>{clienteUnificarSelecionado.nome}</strong></span>
+              </div>
+              <button onClick={() => setModalUnificarAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+            </div>
+
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '12px', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.85rem', color: '#1e40af', marginBottom: '4px' }}>
+                Juntar <strong>{clienteUnificarSelecionado.contas.length} faturas</strong> em uma nova conta:
+              </div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1d4ed8' }}>
+                Novo Saldo Unificado: R$ {clienteUnificarSelecionado.totalSaldo.toFixed(2)}
+              </div>
+              <p style={{ fontSize: '0.74rem', color: '#3b82f6', marginTop: '4px' }}>
+                As contas antigas serão liquidadas como "Unificadas" e substituídas por este novo título.
+              </p>
+            </div>
+
+            <div className="form-group-modal">
+              <label>Descrição do Novo Título</label>
+              <input 
+                type="text" 
+                value={novaDescricaoUnificada} 
+                onChange={e => setNovaDescricaoUnificada(e.target.value)} 
+              />
+            </div>
+
+            <div className="form-group-modal">
+              <label>Nova Data de Vencimento Combinada</label>
+              <input 
+                type="date" 
+                value={novoVencimentoUnificado} 
+                onChange={e => setNovoVencimentoUnificado(e.target.value)} 
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1.25rem' }}>
+              <button className="btn-action btn-sec" onClick={() => setModalUnificarAberto(false)}>Cancelar</button>
+              <button 
+                className="btn-action" 
+                onClick={confirmarUnificacao}
+                disabled={salvandoUnificacao}
+              >
+                {salvandoUnificacao ? 'Unificando...' : 'Confirmar Unificação'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RECEBER INDIVIDUAL */}
       {contaModalReceber && (
         <div className="modal-overlay" onClick={() => setContaModalReceber(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Registrar Pagamento</h3>
-              <button 
-                onClick={() => setContaModalReceber(null)} 
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
-              >
-                ✕
-              </button>
+              <button onClick={() => setContaModalReceber(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
             </div>
 
             <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.88rem' }}>
@@ -876,13 +1115,7 @@ export default function ContasReceber() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1.25rem' }}>
-              <button 
-                className="btn-action btn-sec" 
-                onClick={() => setContaModalReceber(null)}
-                disabled={salvandoRecebimento}
-              >
-                Cancelar
-              </button>
+              <button className="btn-action btn-sec" onClick={() => setContaModalReceber(null)} disabled={salvandoRecebimento}>Cancelar</button>
               <button 
                 className="btn-action" 
                 onClick={confirmarRecebimento}
@@ -896,18 +1129,13 @@ export default function ContasReceber() {
         </div>
       )}
 
-      {/* MODAL COMPROVANTE: COM Z-INDEX 200 (SEMPRE NO TOPO ABSOLUTO) */}
+      {/* MODAL COMPROVANTE: COM Z-INDEX 200 */}
       {comprovanteAtual && (
         <div className="modal-overlay-recibo" onClick={() => setComprovanteAtual(null)}>
           <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
             <div className="modal-header">
               <h3 className="modal-title">🧾 Recibo de Pagamento</h3>
-              <button 
-                onClick={() => setComprovanteAtual(null)} 
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
-              >
-                ✕
-              </button>
+              <button onClick={() => setComprovanteAtual(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
             </div>
 
             <div className="recibo-box recibo-print-area">
@@ -1008,12 +1236,7 @@ export default function ContasReceber() {
           <div className="modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Histórico de Pagamentos</h3>
-              <button 
-                onClick={() => setContaModalHist(null)} 
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
-              >
-                ✕
-              </button>
+              <button onClick={() => setContaModalHist(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
             </div>
 
             <div style={{ marginBottom: '1.25rem', padding: '10px 14px', background: '#f1f5f9', borderRadius: '10px', fontSize: '0.85rem' }}>
@@ -1075,14 +1298,118 @@ export default function ContasReceber() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button 
-                className="btn-action btn-sec" 
-                onClick={() => setContaModalHist(null)}
-                style={{ padding: '0.6rem 1.2rem' }}
-              >
+              <button className="btn-action btn-sec" onClick={() => setContaModalHist(null)} style={{ padding: '0.6rem 1.2rem' }}>
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO TÍTULO MANUAL */}
+      {modalNovoTitulo && (
+        <div className="modal-overlay" onClick={() => setModalNovoTitulo(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Lançar Dívida / Saldo Antigo</h3>
+              <button onClick={() => setModalNovoTitulo(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={salvarNovoTituloManual}>
+              <div className="form-group-modal" ref={dropdownCliRef}>
+                <label>Pesquisar Cliente</label>
+                {!clienteSelecionadoObj ? (
+                  <>
+                    <input 
+                      type="text"
+                      placeholder="Ex: Maria, Carlos, (11) 98..."
+                      value={termoBuscaCliente}
+                      onChange={e => { setTermoBuscaCliente(e.target.value); setMostrarDropdownCli(true); }}
+                      onFocus={() => setMostrarDropdownCli(true)}
+                      required
+                    />
+
+                    {mostrarDropdownCli && (
+                      <div className="cli-dropdown">
+                        {clientesFiltradosBusca.length === 0 ? (
+                          <div style={{ padding: '10px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
+                            Nenhum cliente encontrado.
+                          </div>
+                        ) : (
+                          clientesFiltradosBusca.map(c => (
+                            <div key={c.id} className="cli-item" onClick={() => selecionarCliente(c)}>
+                              <strong>{c.nome}</strong>
+                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{c.telefone || c.cpf || ''}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="cli-selected-badge">
+                    <div>
+                      <strong>{clienteSelecionadoObj.nome}</strong>
+                      {clienteSelecionadoObj.telefone && <span style={{ marginLeft: '8px', fontSize: '0.8rem', opacity: 0.85 }}>({clienteSelecionadoObj.telefone})</span>}
+                    </div>
+                    <button type="button" onClick={limparSelecaoCliente} style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}>
+                      ✕ Trocar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="form-group-modal">
+                <label>Descrição do Saldo / Referência</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: Saldo antigo de roupas / Caderno 2024"
+                  value={novaDescricao}
+                  onChange={e => setNovaDescricao(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="form-group-modal" style={{ flex: 1 }}>
+                  <label>Valor Total da Dívida (R$)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0,00"
+                    value={novoValorTotal}
+                    onChange={e => setNovoValorTotal(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group-modal" style={{ flex: 1 }}>
+                  <label>Já Pago no Passado (R$)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0,00"
+                    value={novoValorPago}
+                    onChange={e => setNovoValorPago(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-modal">
+                <label>Data de Vencimento / Combinada</label>
+                <input 
+                  type="date" 
+                  value={novoVencimento}
+                  onChange={e => setNovoVencimento(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1rem' }}>
+                <button type="button" className="btn-action btn-sec" onClick={() => setModalNovoTitulo(false)}>Cancelar</button>
+                <button type="submit" className="btn-action" disabled={salvandoNovoTitulo} style={{ background: '#2563eb', padding: '0.6rem 1.2rem' }}>
+                  {salvandoNovoTitulo ? 'Salvando...' : 'Salvar Saldo Devedor'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
