@@ -7,12 +7,6 @@ const IconTrendingUp = () => (
   </svg>
 )
 
-const IconAlertTriangle = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-  </svg>
-)
-
 const IconUsers = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
@@ -31,6 +25,12 @@ const IconWhatsApp = () => (
   </svg>
 )
 
+const IconDollar = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+  </svg>
+)
+
 const formatarDataInput = (data) => {
   const ano = data.getFullYear()
   const mes = String(data.getMonth() + 1).padStart(2, '0')
@@ -43,8 +43,12 @@ export default function Relatorios() {
   const [vendas, setVendas] = useState([])
   const [produtos, setProdutos] = useState([])
   const [clientes, setClientes] = useState([])
+  const [contasReceber, setContasReceber] = useState([])
   const [dadosEmpresa, setDadosEmpresa] = useState(null)
   
+  // Abas Principais
+  const [abaAtiva, setAbaAtiva] = useState('dre') // 'dre' ou 'extrato'
+
   // Filtros de Período
   const [periodoTipo, setPeriodoTipo] = useState('mes')
   const [dataInicio, setDataInicio] = useState(() => {
@@ -54,11 +58,12 @@ export default function Relatorios() {
   })
   const [dataFim, setDataFim] = useState(() => formatarDataInput(new Date()))
 
-  // Filtro por Categoria
+  // Filtro por Categoria (Aba DRE)
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
-
-  // Filtro de Sensibilidade de Estoque Parado
   const [diasCorteEstoque, setDiasCorteEstoque] = useState(45)
+
+  // Filtro por Forma de Pagamento (Aba Extrato)
+  const [filtroFormaExtrato, setFiltroFormaExtrato] = useState('todas')
 
   const carregarDados = async () => {
     setLoading(true)
@@ -66,11 +71,13 @@ export default function Relatorios() {
       const { data: vData } = await supabase.from('vendas').select('*, clientes(id, nome, telefone, saldo_cashback)').order('created_at', { ascending: false })
       const { data: pData } = await supabase.from('produtos').select('*').order('nome')
       const { data: cData } = await supabase.from('clientes').select('*').order('nome')
+      const { data: crData } = await supabase.from('contas_a_receber').select('*, clientes(id, nome, telefone)')
       const { data: cfgData } = await supabase.from('configuracoes').select('*')
 
       if (vData) setVendas(vData)
       if (pData) setProdutos(pData)
       if (cData) setClientes(cData)
+      if (crData) setContasReceber(crData)
 
       if (cfgData) {
         const mapa = {}
@@ -87,59 +94,53 @@ export default function Relatorios() {
     carregarDados()
   }, [])
 
-  // Mapa rápido de ProdutoId -> Categoria
-  const mapaCategoriasProdutos = {}
-  produtos.forEach(p => {
-    mapaCategoriasProdutos[p.id] = (p.categoria || 'Geral').trim()
-  })
-
-  // Lista única de categorias para o seletor
-  const listaCategoriasDisponiveis = Array.from(
-    new Set(produtos.map(p => (p.categoria || 'Geral').trim()).filter(Boolean))
-  ).sort()
-
-  // 1. Filtro temporal das vendas
-  const vendasNoPeriodo = vendas.filter(v => {
+  // Filtro temporal genérico
+  const estaNoPeriodo = (dataIso) => {
     if (periodoTipo === 'todos') return true
-
-    const dt = new Date(v.created_at)
+    const dt = new Date(dataIso)
     const agora = new Date()
 
     if (periodoTipo === 'hoje') {
       return dt.getDate() === agora.getDate() && dt.getMonth() === agora.getMonth() && dt.getFullYear() === agora.getFullYear()
     }
-
     if (periodoTipo === '7dias') {
       const seteDiasAtras = new Date()
       seteDiasAtras.setDate(seteDiasAtras.getDate() - 7)
       seteDiasAtras.setHours(0, 0, 0, 0)
       return dt >= seteDiasAtras
     }
-
     if (periodoTipo === 'mes') {
       return dt.getMonth() === agora.getMonth() && dt.getFullYear() === agora.getFullYear()
     }
-
     if (periodoTipo === 'custom') {
       if (!dataInicio && !dataFim) return true
       const dInicio = dataInicio ? new Date(`${dataInicio}T00:00:00`) : new Date('1970-01-01')
       const dFim = dataFim ? new Date(`${dataFim}T23:59:59.999`) : new Date('2099-12-31')
       return dt >= dInicio && dt <= dFim
     }
-
     return true
+  }
+
+  // Mapa ProdutoId -> Categoria
+  const mapaCategoriasProdutos = {}
+  produtos.forEach(p => {
+    mapaCategoriasProdutos[p.id] = (p.categoria || 'Geral').trim()
   })
 
-  // 2. Cálculo do DRE e Resumo por Categoria
+  const listaCategoriasDisponiveis = Array.from(
+    new Set(produtos.map(p => (p.categoria || 'Geral').trim()).filter(Boolean))
+  ).sort()
+
+  const vendasNoPeriodo = vendas.filter(v => estaNoPeriodo(v.created_at))
+
+  // 1. Processamento DRE
   let receitaTotal = 0
   let custoTotal = 0
   let qtdItensTotal = 0
-
   const desempenhoPorCategoria = {}
 
   vendasNoPeriodo.forEach(v => {
     const itens = Array.isArray(v.itens) ? v.itens : []
-
     itens.forEach(item => {
       const catItem = mapaCategoriasProdutos[item.produtoId] || 'Geral'
       const qtd = Number(item.quantidade || 1)
@@ -149,20 +150,13 @@ export default function Relatorios() {
       const subtotalItem = qtd * precoUnit
       const custoTotalItem = qtd * custoUnit
 
-      // Acúmulo por categoria para a tabela comparativa
       if (!desempenhoPorCategoria[catItem]) {
-        desempenhoPorCategoria[catItem] = {
-          categoria: catItem,
-          faturamento: 0,
-          custo: 0,
-          qtdPecas: 0
-        }
+        desempenhoPorCategoria[catItem] = { categoria: catItem, faturamento: 0, custo: 0, qtdPecas: 0 }
       }
       desempenhoPorCategoria[catItem].faturamento += subtotalItem
       desempenhoPorCategoria[catItem].custo += custoTotalItem
       desempenhoPorCategoria[catItem].qtdPecas += qtd
 
-      // Se houver filtro de categoria ativo, computa apenas os itens da categoria escolhida
       if (categoriaFiltro === 'todas' || catItem.toLowerCase() === categoriaFiltro.toLowerCase()) {
         receitaTotal += subtotalItem
         custoTotal += custoTotalItem
@@ -173,28 +167,20 @@ export default function Relatorios() {
 
   const listaDesempenhoCategorias = Object.values(desempenhoPorCategoria).sort((a, b) => b.faturamento - a.faturamento)
   const totalGeralTodasCategorias = listaDesempenhoCategorias.reduce((s, c) => s + c.faturamento, 0)
-
   const lucroBruto = Math.max(0, receitaTotal - custoTotal)
   const margemPercentual = receitaTotal > 0 ? ((lucroBruto / receitaTotal) * 100) : 0
 
-  // 3. Curva ABC (Produtos Mais Vendidos) respeitando o filtro de categoria
+  // 2. Curva ABC
   const mapaProdutos = {}
   vendasNoPeriodo.forEach(v => {
     const itens = Array.isArray(v.itens) ? v.itens : []
     itens.forEach(item => {
       const catItem = mapaCategoriasProdutos[item.produtoId] || 'Geral'
-      if (categoriaFiltro !== 'todas' && catItem.toLowerCase() !== categoriaFiltro.toLowerCase()) {
-        return
-      }
+      if (categoriaFiltro !== 'todas' && catItem.toLowerCase() !== categoriaFiltro.toLowerCase()) return
 
       const idProd = item.produtoId || item.nomeProduto
       if (!mapaProdutos[idProd]) {
-        mapaProdutos[idProd] = {
-          nome: item.nomeProduto,
-          categoria: catItem,
-          qtd: 0,
-          faturamento: 0
-        }
+        mapaProdutos[idProd] = { nome: item.nomeProduto, categoria: catItem, qtd: 0, faturamento: 0 }
       }
       const qtd = Number(item.quantidade || 1)
       const preco = Number(item.preco || 0)
@@ -202,19 +188,16 @@ export default function Relatorios() {
       mapaProdutos[idProd].faturamento += (qtd * preco)
     })
   })
-
   const rankingProdutos = Object.values(mapaProdutos).sort((a, b) => b.faturamento - a.faturamento).slice(0, 8)
 
-  // 4. Estoque Parado
+  // 3. Estoque Parado
   const dataLimiteParado = new Date()
   dataLimiteParado.setDate(dataLimiteParado.getDate() - diasCorteEstoque)
   dataLimiteParado.setHours(23, 59, 59, 999)
 
   const produtosParados = produtos.map(p => {
     if ((p.estoque || 0) <= 0) return null
-    if (categoriaFiltro !== 'todas' && (p.categoria || 'Geral').toLowerCase() !== categoriaFiltro.toLowerCase()) {
-      return null
-    }
+    if (categoriaFiltro !== 'todas' && (p.categoria || 'Geral').toLowerCase() !== categoriaFiltro.toLowerCase()) return null
 
     const ultimaVenda = vendas.find(v => {
       const itens = Array.isArray(v.itens) ? v.itens : []
@@ -232,9 +215,7 @@ export default function Relatorios() {
       motivo = 'Cadastrado e nunca vendeu'
     }
 
-    if (!dataReferencia || dataReferencia >= dataLimiteParado) {
-      return null
-    }
+    if (!dataReferencia || dataReferencia >= dataLimiteParado) return null
 
     const diffTempo = Math.abs(new Date() - dataReferencia)
     const diasSemGiro = Math.floor(diffTempo / (1000 * 60 * 60 * 24))
@@ -247,7 +228,7 @@ export default function Relatorios() {
     }
   }).filter(Boolean).sort((a, b) => b.diasSemGiro - a.diasSemGiro).slice(0, 10)
 
-  // Radar de Clientes Inativos com Saldo
+  // 4. Clientes Inativos com Cashback
   const clientesInativosComSaldo = clientes.filter(c => {
     const saldo = Number(c.saldo_cashback || 0)
     if (saldo <= 0.5) return false
@@ -255,6 +236,73 @@ export default function Relatorios() {
     if (!ultimaVenda) return true
     return new Date(ultimaVenda.created_at) < dataLimiteParado
   })
+
+  // 5. PROCESSAMENTO DO EXTRATO UNIFICADO (FLUXO DE CAIXA REAL)
+  const lancamentosExtrato = []
+
+  // A) Vendas à vista / balcão (desconsiderando o que foi lançado a prazo 100% no crediário)
+  vendasNoPeriodo.forEach(v => {
+    const clienteNome = v.clientes?.nome || 'Cliente Avulso'
+
+    if (v.forma_pagamento === 'misto' && Array.isArray(v.pagamentos_detalhe)) {
+      v.pagamentos_detalhe.forEach((pag, idx) => {
+        if (pag.tipo !== 'crediario') {
+          lancamentosExtrato.push({
+            id: `v-${v.id}-${idx}`,
+            dataHora: v.created_at,
+            origem: 'Venda Balcão (PDV)',
+            descricao: `Venda #${v.id} (Parcela Mista)`,
+            cliente: clienteNome,
+            forma: pag.tipo.toUpperCase(),
+            valor: Number(pag.valor || 0)
+          })
+        }
+      })
+    } else if (v.forma_pagamento !== 'crediario') {
+      lancamentosExtrato.push({
+        id: `v-${v.id}`,
+        dataHora: v.created_at,
+        origem: 'Venda Balcão (PDV)',
+        descricao: `Venda #${v.id}`,
+        cliente: clienteNome,
+        forma: v.forma_pagamento.toUpperCase(),
+        valor: Number(v.total || 0)
+      })
+    }
+  })
+
+  // B) Recebimentos de Crediário (Histórico de quitações no período)
+  contasReceber.forEach(conta => {
+    const hist = Array.isArray(conta.historico_pagamentos) ? conta.historico_pagamentos : []
+    hist.forEach(h => {
+      if (h.data && estaNoPeriodo(h.data) && Number(h.valor || 0) > 0) {
+        lancamentosExtrato.push({
+          id: `cr-${conta.id}-${h.id || Math.random()}`,
+          dataHora: h.data,
+          origem: 'Crediário (Recebimento)',
+          descricao: conta.descricao || `Conta #${conta.id}`,
+          cliente: conta.clientes?.nome || 'Cliente Avulso',
+          forma: (h.forma || 'PIX / DINHEIRO').toUpperCase(),
+          valor: Number(h.valor || 0)
+        })
+      }
+    })
+  })
+
+  // Ordena os lançamentos por data decrescente
+  lancamentosExtrato.sort((a, b) => new Date(b.dataHora) - new Date(a.dataHora))
+
+  // Filtra por forma se selecionada no extrato
+  const extratoFiltrado = lancamentosExtrato.filter(l => {
+    if (filtroFormaExtrato === 'todas') return true
+    return l.forma.toLowerCase().includes(filtroFormaExtrato.toLowerCase())
+  })
+
+  // Totais do Extrato de Caixa
+  const totalEntradaCaixa = extratoFiltrado.reduce((s, l) => s + l.valor, 0)
+  const totalDinheiroCaixa = extratoFiltrado.filter(l => l.forma.includes('DINHEIRO')).reduce((s, l) => s + l.valor, 0)
+  const totalPixCaixa = extratoFiltrado.filter(l => l.forma.includes('PIX')).reduce((s, l) => s + l.valor, 0)
+  const totalCartaoCaixa = extratoFiltrado.filter(l => l.forma.includes('CART') || l.forma.includes('DEBITO') || l.forma.includes('CREDITO')).reduce((s, l) => s + l.valor, 0)
 
   const convidarClienteWhatsApp = (cliente) => {
     if (!cliente.telefone) return alert('Cliente sem telefone cadastrado!')
@@ -279,6 +327,10 @@ export default function Relatorios() {
         .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
         .page-subtitle { color: #64748b; font-size: 0.875rem; margin-top: 4px; }
 
+        .tabs-main-nav { display: flex; gap: 10px; margin-bottom: 1.25rem; border-bottom: 2px solid #e2e8f0; }
+        .tab-main-btn { padding: 10px 18px; border: none; background: transparent; font-size: 0.95rem; font-weight: 700; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+        .tab-main-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+
         .filter-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 12px; }
         .filter-row-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
         
@@ -295,11 +347,11 @@ export default function Relatorios() {
         .date-input-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
         .date-input-group input { height: 34px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.85rem; color: #0f172a; outline: none; }
 
-        .dre-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-        .dre-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
-        .dre-title { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
-        .dre-val { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
-        .dre-sub { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+        .kpi-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        .kpi-title { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
+        .kpi-val { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
+        .kpi-sub { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
 
         .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
         .card-panel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); box-sizing: border-box; }
@@ -310,6 +362,10 @@ export default function Relatorios() {
         td { padding: 0.85rem 1rem; font-size: 0.88rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         tbody tr:hover { background: #f8fafc; }
 
+        .badge-origem { padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; display: inline-block; }
+        .origem-pdv { background: #eff6ff; color: #1d4ed8; }
+        .origem-cr { background: #fef3c7; color: #92400e; }
+
         .badge-warning { background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
         .btn-zap-mini { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
         .btn-zap-mini:hover { background: #bbf7d0; }
@@ -318,11 +374,11 @@ export default function Relatorios() {
         .selector-dias select { height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 0.78rem; font-weight: 700; color: #0f172a; }
 
         @media (max-width: 900px) {
-          .dre-grid { grid-template-columns: 1fr 1fr; }
+          .kpi-grid { grid-template-columns: 1fr 1fr; }
           .two-cols { grid-template-columns: 1fr; }
         }
         @media (max-width: 600px) {
-          .dre-grid { grid-template-columns: 1fr; }
+          .kpi-grid { grid-template-columns: 1fr; }
           .filter-row-top { flex-direction: column; align-items: stretch; }
           .custom-dates-bar { flex-direction: column; align-items: stretch; }
           .date-input-group { justify-content: space-between; }
@@ -331,12 +387,22 @@ export default function Relatorios() {
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">Relatórios Gerenciais</h1>
-          <p className="page-subtitle">DRE, Margem Real, Vendas por Categoria e Giro de Estoque</p>
+          <h1 className="page-title">Relatórios & Inteligência Financeira</h1>
+          <p className="page-subtitle">DRE Gerencial, Fluxo de Caixa Real e Análise de Desempenho</p>
         </div>
       </div>
 
-      {/* BARRA DE FILTROS (DATA + CATEGORIA) */}
+      {/* NAVEGAÇÃO ENTRE AS ABAS PRINCIPAIS */}
+      <div className="tabs-main-nav">
+        <button className={`tab-main-btn ${abaAtiva === 'dre' ? 'active' : ''}`} onClick={() => setAbaAtiva('dre')}>
+          📊 Visão DRE & Vendas
+        </button>
+        <button className={`tab-main-btn ${abaAtiva === 'extrato' ? 'active' : ''}`} onClick={() => setAbaAtiva('extrato')}>
+          💵 Extrato de Recebimentos (Fluxo de Caixa)
+        </button>
+      </div>
+
+      {/* BARRA DE FILTROS TEMPORAIS (COMPARTILHADA) */}
       <div className="filter-container">
         <div className="filter-row-top">
           <div className="filter-periodo">
@@ -347,16 +413,28 @@ export default function Relatorios() {
             <button className={`btn-p ${periodoTipo === 'custom' ? 'active' : ''}`} onClick={() => setPeriodoTipo('custom')}>📅 Intervalo (De ➔ Até)</button>
           </div>
 
-          {/* SELETOR DE CATEGORIA */}
-          <div className="category-select-box">
-            <label>Filtrar Categoria:</label>
-            <select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)}>
-              <option value="todas">Todas as Categorias</option>
-              {listaCategoriasDisponiveis.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
+          {abaAtiva === 'dre' ? (
+            <div className="category-select-box">
+              <label>Filtrar Categoria:</label>
+              <select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)}>
+                <option value="todas">Todas as Categorias</option>
+                {listaCategoriasDisponiveis.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="category-select-box">
+              <label>Filtrar Forma:</label>
+              <select value={filtroFormaExtrato} onChange={e => setFiltroFormaExtrato(e.target.value)}>
+                <option value="todas">Todas as Formas</option>
+                <option value="pix">PIX</option>
+                <option value="dinheiro">Dinheiro</option>
+                <option value="debito">Cartão de Débito</option>
+                <option value="credito">Cartão de Crédito</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {periodoTipo === 'custom' && (
@@ -372,46 +450,124 @@ export default function Relatorios() {
             </div>
 
             <span style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: 600, marginLeft: 'auto' }}>
-              ✓ De {new Date(`${dataInicio}T12:00:00`).toLocaleDateString('pt-BR')} até {new Date(`${dataFim}T12:00:00`).toLocaleDateString('pt-BR')} {categoriaFiltro !== 'todas' ? `• Categoria: ${categoriaFiltro}` : ''}
+              ✓ De {new Date(`${dataInicio}T12:00:00`).toLocaleDateString('pt-BR')} até {new Date(`${dataFim}T12:00:00`).toLocaleDateString('pt-BR')}
             </span>
           </div>
         )}
       </div>
 
       {loading ? (
-        <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Processando inteligência de negócio...</p>
-      ) : (
+        <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Carregando dados financeiros...</p>
+      ) : abaAtiva === 'extrato' ? (
+        /* ======================== ABA EXTRATO DE RECEBIMENTOS ======================== */
         <>
-          {/* CARDS DRE / LUCRATIVIDADE CALIBRADOS */}
-          <div className="dre-grid">
-            <div className="dre-card">
-              <span className="dre-title">Faturamento {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : 'Líquido'}</span>
-              <span className="dre-val" style={{ color: '#2563eb' }}>R$ {receitaTotal.toFixed(2)}</span>
-              <span className="dre-sub">{qtdItensTotal} unidades vendidas</span>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <span className="kpi-title">Total Entrado no Caixa</span>
+              <span className="kpi-val" style={{ color: '#16a34a' }}>R$ {totalEntradaCaixa.toFixed(2)}</span>
+              <span className="kpi-sub">{extratoFiltrado.length} lançamentos de entrada</span>
             </div>
 
-            <div className="dre-card">
-              <span className="dre-title">Custo das Peças (CMV)</span>
-              <span className="dre-val" style={{ color: '#64748b' }}>R$ {custoTotal.toFixed(2)}</span>
-              <span className="dre-sub">Baseado no preço de custo</span>
+            <div className="kpi-card">
+              <span className="kpi-title">Dinheiro Físico (Gaveta)</span>
+              <span className="kpi-val" style={{ color: '#047857' }}>R$ {totalDinheiroCaixa.toFixed(2)}</span>
+              <span className="kpi-sub">Total recebido em espécie</span>
             </div>
 
-            <div className="dre-card">
-              <span className="dre-title">Lucro Bruto Real</span>
-              <span className="dre-val" style={{ color: '#10b981' }}>R$ {lucroBruto.toFixed(2)}</span>
-              <span className="dre-sub">Faturamento - Custo</span>
+            <div className="kpi-card">
+              <span className="kpi-title">PIX Instantâneo</span>
+              <span className="kpi-val" style={{ color: '#0284c7' }}>R$ {totalPixCaixa.toFixed(2)}</span>
+              <span className="kpi-sub">Entradas diretas na conta</span>
             </div>
 
-            <div className="dre-card">
-              <span className="dre-title">Margem de Lucro</span>
-              <span className="dre-val" style={{ color: margemPercentual >= 40 ? '#10b981' : '#f59e0b' }}>
-                {margemPercentual.toFixed(1)}%
-              </span>
-              <span className="dre-sub">Retorno sobre faturamento</span>
+            <div className="kpi-card">
+              <span className="kpi-title">Cartões (Débito/Crédito)</span>
+              <span className="kpi-val" style={{ color: '#7c3aed' }}>R$ {totalCartaoCaixa.toFixed(2)}</span>
+              <span className="kpi-sub">Processado na maquininha</span>
             </div>
           </div>
 
-          {/* TABELA: DESEMPENHO POR CATEGORIA */}
+          <div className="card-panel">
+            <div className="panel-heading">
+              <span>🧾 Extrato Consolidado de Recebimentos (Vendas + Crediário)</span>
+              <IconDollar />
+            </div>
+
+            {extratoFiltrado.length === 0 ? (
+              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
+                Nenhum recebimento registrado no período selecionado.
+              </p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data / Hora</th>
+                      <th>Origem</th>
+                      <th>Referência / Descrição</th>
+                      <th>Cliente</th>
+                      <th>Forma de Pagamento</th>
+                      <th style={{ textAlign: 'right' }}>Valor Recebido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {extratoFiltrado.map(l => (
+                      <tr key={l.id}>
+                        <td>{new Date(l.dataHora).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                        <td>
+                          <span className={`badge-origem ${l.origem.includes('PDV') ? 'origem-pdv' : 'origem-cr'}`}>
+                            {l.origem}
+                          </span>
+                        </td>
+                        <td><strong>{l.descricao}</strong></td>
+                        <td>{l.cliente}</td>
+                        <td>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                            {l.forma}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 800, color: '#16a34a', fontSize: '0.95rem' }}>
+                          + R$ {l.valor.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* ======================== ABA DRE & VENDAS ======================== */
+        <>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <span className="kpi-title">Faturamento {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : 'Líquido'}</span>
+              <span className="kpi-val" style={{ color: '#2563eb' }}>R$ {receitaTotal.toFixed(2)}</span>
+              <span className="kpi-sub">{qtdItensTotal} unidades vendidas</span>
+            </div>
+
+            <div className="kpi-card">
+              <span className="kpi-title">Custo das Peças (CMV)</span>
+              <span className="kpi-val" style={{ color: '#64748b' }}>R$ {custoTotal.toFixed(2)}</span>
+              <span className="kpi-sub">Baseado no preço de custo</span>
+            </div>
+
+            <div className="kpi-card">
+              <span className="kpi-title">Lucro Bruto Real</span>
+              <span className="kpi-val" style={{ color: '#10b981' }}>R$ {lucroBruto.toFixed(2)}</span>
+              <span className="kpi-sub">Faturamento - Custo</span>
+            </div>
+
+            <div className="kpi-card">
+              <span className="kpi-title">Margem de Lucro</span>
+              <span className="kpi-val" style={{ color: margemPercentual >= 40 ? '#10b981' : '#f59e0b' }}>
+                {margemPercentual.toFixed(1)}%
+              </span>
+              <span className="kpi-sub">Retorno sobre faturamento</span>
+            </div>
+          </div>
+
           <div className="card-panel" style={{ marginBottom: '1.5rem' }}>
             <div className="panel-heading">
               <span>📊 Desempenho por Categoria no Período</span>
@@ -464,7 +620,6 @@ export default function Relatorios() {
           </div>
 
           <div className="two-cols">
-            {/* CURVA ABC (PRODUTOS MAIS VENDIDOS) */}
             <div className="card-panel">
               <div className="panel-heading">
                 <span>🏆 Curva ABC: Mais Vendidos {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : ''}</span>
@@ -500,7 +655,6 @@ export default function Relatorios() {
               )}
             </div>
 
-            {/* ALERTA DE ESTOQUE PARADO */}
             <div className="card-panel">
               <div className="panel-heading">
                 <span>⚠️ Alerta de Estoque Parado {categoriaFiltro !== 'todas' ? `(${categoriaFiltro})` : ''}</span>
@@ -555,7 +709,6 @@ export default function Relatorios() {
             </div>
           </div>
 
-          {/* RADAR DE CLIENTES INATIVOS COM CASHBACK */}
           <div className="card-panel">
             <div className="panel-heading">
               <span>🎯 Radar de Clientes Inativos com Cashback Parado</span>
