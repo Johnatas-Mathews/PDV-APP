@@ -117,9 +117,11 @@ export default function Vendas() {
   const [valorRecebido, setValorRecebido] = useState('')
   const [salvando, setSalvando] = useState(false)
 
+  // Modal Fechamento / Lista de Vendas do Dia com Estorno
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [vendasDoDia, setVendasDoDia] = useState([])
   const [carregandoCaixa, setCarregandoCaixa] = useState(false)
+  const [estornandoVendaId, setEstornandoVendaId] = useState(null)
 
   const carregarDados = async () => {
     const { data: prodData } = await supabase.from('produtos').select('*').order('nome')
@@ -160,7 +162,6 @@ export default function Vendas() {
     carregarDados()
   }, [])
 
-  // Buscar contas a receber pendentes sempre que o cliente for selecionado
   const verificarPendenciasCliente = async (clienteId) => {
     if (!clienteId) {
       setPendenciasCliente([])
@@ -401,7 +402,6 @@ export default function Vendas() {
   const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
   const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
 
-  // CÁLCULOS DO RADAR DE CRÉDITO DO CLIENTE
   const totalPendenteCliente = pendenciasCliente.reduce((sum, c) => {
     return sum + Math.max(0, Number(c.valor || 0) - Number(c.valor_pago || 0))
   }, 0)
@@ -456,10 +456,81 @@ export default function Vendas() {
       .select('*, clientes(nome)')
       .gte('created_at', inicioDia)
       .lte('created_at', fimDia)
-      .order('created_at', { ascending: true })
+      .neq('status', 'cancelada')
+      .order('created_at', { ascending: false })
 
     if (data) setVendasDoDia(data)
     setCarregandoCaixa(false)
+  }
+
+  // FUNÇÃO DE ESTORNO / CANCELAMENTO DA VENDA
+  const estornarVenda = async (venda) => {
+    if (!confirm(`Tem certeza que deseja cancelar e estornar a Venda #${venda.id} de R$ ${Number(venda.total).toFixed(2)}?\n\n• As peças voltarão ao estoque\n• O saldo financeiro será estornado\n• O crediário/cashback vinculado será revertido.`)) {
+      return
+    }
+
+    setEstornandoVendaId(venda.id)
+    try {
+      // 1. Devolver peças ao estoque
+      if (Array.isArray(venda.itens)) {
+        for (const item of venda.itens) {
+          const qtdDevolver = Number(item.quantidade || 1)
+          if (item.variacaoId) {
+            const v = variacoes.find(x => x.id === item.variacaoId)
+            const estAtual = v ? Number(v.estoque || 0) : 0
+            await supabase.from('variacoes_grade').update({ estoque: estAtual + qtdDevolver }).eq('id', item.variacaoId)
+          } else if (item.produtoId) {
+            const p = produtos.find(x => x.id === item.produtoId)
+            const estAtual = p ? Number(p.estoque || 0) : 0
+            await supabase.from('produtos').update({ estoque: estAtual + qtdDevolver }).eq('id', item.produtoId)
+          }
+        }
+      }
+
+      // 2. Se gerou conta a receber (Crediário), remove ou cancela o título
+      await supabase
+        .from('contas_a_receber')
+        .delete()
+        .ilike('descricao', `%Venda #${venda.id}%`)
+
+      // 3. Reverter Cashback se houver cliente
+      if (venda.cliente_id) {
+        const { data: movs } = await supabase
+          .from('cashback_movimentacoes')
+          .select('*')
+          .eq('venda_id', venda.id)
+
+        if (movs && movs.length > 0) {
+          let ajusteSaldo = 0
+          for (const m of movs) {
+            if (m.tipo === 'credito') ajusteSaldo -= Number(m.valor || 0)
+            if (m.tipo === 'resgate') ajusteSaldo += Number(m.valor || 0)
+            await supabase.from('cashback_movimentacoes').update({ status: 'estornado' }).eq('id', m.id)
+          }
+
+          const { data: cliAtualizado } = await supabase.from('clientes').select('saldo_cashback').eq('id', venda.cliente_id).single()
+          if (cliAtualizado) {
+            const novoSaldo = Math.max(0, Number(cliAtualizado.saldo_cashback || 0) + ajusteSaldo)
+            await supabase.from('clientes').update({ saldo_cashback: novoSaldo }).eq('id', venda.cliente_id)
+          }
+        }
+      }
+
+      // 4. Marca a venda como cancelada
+      const { error: errVenda } = await supabase
+        .from('vendas')
+        .update({ status: 'cancelada' })
+        .eq('id', venda.id)
+
+      if (errVenda) throw errVenda
+
+      alert(`Venda #${venda.id} cancelada com sucesso! O estoque foi restaurado.`)
+      await carregarDados()
+      await abrirFechamentoCaixa()
+    } catch (err) {
+      alert('Erro ao estornar venda: ' + err.message)
+    }
+    setEstornandoVendaId(null)
   }
 
   const resumoTotais = vendasDoDia.reduce((acc, v) => {
@@ -607,7 +678,6 @@ export default function Vendas() {
         await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
       }
 
-      // Crediário
       if (formaPagamento === 'crediario') {
         const dataVencimento = new Date()
         dataVencimento.setDate(dataVencimento.getDate() + 30)
@@ -637,7 +707,6 @@ export default function Vendas() {
         }
       }
 
-      // Baixa de estoque
       for (const item of itensVenda) {
         if (item.variacaoId) {
           const v = variacoes.find(x => x.id === item.variacaoId)
@@ -703,7 +772,6 @@ export default function Vendas() {
         .busca-item-title { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
         .busca-item-sub { font-size: 0.75rem; color: #64748b; }
 
-        /* RADAR DE CRÉDITO DO CLIENTE */
         .radar-box-ok {
           background: #ecfdf5;
           border: 1px solid #a7f3d0;
@@ -797,7 +865,7 @@ export default function Vendas() {
         #reader-camera { width: 100%; border-radius: 12px; overflow: hidden; }
 
         .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
-        .modal-sheet { background: #ffffff; width: 100%; max-width: 580px; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+        .modal-sheet { background: #ffffff; width: 100%; max-width: 680px; max-height: 90vh; overflow-y: auto; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
         .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
         .modal-heading { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
         .modal-sub { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
@@ -856,7 +924,6 @@ export default function Vendas() {
                 )}
               </div>
 
-              {/* RADAR DE CRÉDITO DO CLIENTE SELECIONADO */}
               {clienteSelecionado && (
                 <div>
                   {carregandoPendencias ? (
@@ -1018,7 +1085,6 @@ export default function Vendas() {
             </div>
           )}
 
-          {/* CARD INTELIGENTE DE RESGATE COM TRAVA DE MARGEM */}
           {saldoCashbackDisponivel > 0 && (
             <div className="cashback-card-alert">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1359,12 +1425,13 @@ export default function Vendas() {
         </div>
       )}
 
+      {/* MODAL FECHAMENTO DE CAIXA COM LISTA DE VENDAS E BOTÃO ESTORNAR */}
       {modalCaixaAberto && (
         <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
             <div className="modal-top">
               <div>
-                <h3 className="modal-heading">Fechamento do Dia</h3>
+                <h3 className="modal-heading">Fechamento do Dia & Vendas Realizadas</h3>
                 <p className="modal-sub">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
               </div>
               <button onClick={() => setModalCaixaAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
@@ -1412,6 +1479,59 @@ export default function Vendas() {
                     </div>
                     <strong style={{ color: '#b45309' }}>R$ {resumoTotais.crediario.toFixed(2)}</strong>
                   </div>
+                </div>
+
+                {/* LISTAGEM DE VENDAS DO DIA COM BOTÃO ESTORNAR */}
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', margin: '1rem 0 0.5rem 0' }}>
+                  Vendas Registradas Hoje ({vendasDoDia.length})
+                </h4>
+
+                <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', marginBottom: '1.25rem' }}>
+                  {vendasDoDia.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', padding: '1.5rem' }}>Nenhuma venda registrada hoje.</p>
+                  ) : (
+                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Hora</th>
+                          <th>Cliente</th>
+                          <th>Forma</th>
+                          <th style={{ textAlign: 'right' }}>Total</th>
+                          <th style={{ textAlign: 'center' }}>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vendasDoDia.map(v => (
+                          <tr key={v.id}>
+                            <td>{new Date(v.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td><strong>{v.clientes?.nome || 'Cliente Avulso'}</strong></td>
+                            <td><span style={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700 }}>{v.forma_pagamento}</span></td>
+                            <td style={{ textAlign: 'right', fontWeight: 800, color: '#2563eb' }}>R$ {Number(v.total).toFixed(2)}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => estornarVenda(v)}
+                                disabled={estornandoVendaId === v.id}
+                                style={{
+                                  background: '#fee2e2',
+                                  color: '#dc2626',
+                                  border: '1px solid #fca5a5',
+                                  borderRadius: '6px',
+                                  padding: '4px 8px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                                title="Cancelar venda e devolver peças ao estoque"
+                              >
+                                {estornandoVendaId === v.id ? 'Estornando...' : 'Estornar'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
