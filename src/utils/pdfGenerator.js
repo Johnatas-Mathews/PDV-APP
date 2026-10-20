@@ -77,7 +77,7 @@ export const gerarTextoCupomWhatsApp = (venda, empresa, cashbackGerado = 0) => {
   return msg
 }
 
-// 2. IMPRESSÃO DO COMPROVANTE (TÉRMICO 80MM OU A4)
+// 2. IMPRESSÃO DO COMPROVANTE DE VENDA (TÉRMICO 80MM OU A4)
 export const gerarComprovanteVenda = (venda, empresa) => {
   const nomeLoja = empresa?.nome || DADOS_EMPRESA.nome
   const codVenda = formatarIdVenda(venda.id)
@@ -191,6 +191,127 @@ export const gerarComprovanteVenda = (venda, empresa) => {
         <div class="divider"></div>
         <div class="text-center" style="font-size: 11px;">
           ${empresa?.mensagemCupom || DADOS_EMPRESA.mensagemCupom}
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() { window.close(); };
+          };
+        </script>
+      </body>
+    </html>
+  `)
+
+  janelaImpressao.document.close()
+}
+
+// 3. IMPRESSÃO DO COMPROVANTE DE CONDICIONAL (MALA DE ROUPAS)
+export const gerarComprovanteCondicional = (condicional, empresa) => {
+  const nomeLoja = empresa?.nome || DADOS_EMPRESA.nome
+  const codCondicional = formatarIdVenda(condicional.id)
+  const dataEnvio = new Date(condicional.created_at || Date.now()).toLocaleDateString('pt-BR')
+  const dataDevolucaoPrevista = condicional.data_devolucao_prevista 
+    ? new Date(condicional.data_devolucao_prevista + 'T00:00:00').toLocaleDateString('pt-BR') 
+    : '-'
+  const nomeCliente = condicional.clientes?.nome || 'Cliente'
+  const telCliente = condicional.clientes?.telefone || ''
+
+  let itensHtml = ''
+  let totalPecas = 0
+  let totalValor = 0
+
+  if (Array.isArray(condicional.itens)) {
+    condicional.itens.forEach(item => {
+      const qtd = Number(item.quantidade || 1)
+      const preco = Number(item.preco || 0)
+      const subtotal = qtd * preco
+      totalPecas += qtd
+      totalValor += subtotal
+
+      itensHtml += `
+        <tr>
+          <td style="padding: 4px 0;">
+            <div><strong>${item.nomeProduto || item.nome}</strong></div>
+            <div style="font-size: 11px; color: #555;">
+              ${qtd} un x R$ ${preco.toFixed(2)}
+            </div>
+          </td>
+          <td style="text-align: right; vertical-align: top; padding: 4px 0; font-weight: bold;">
+            R$ ${subtotal.toFixed(2)}
+          </td>
+        </tr>
+      `
+    })
+  }
+
+  const janelaImpressao = window.open('', '_blank', 'width=380,height=600')
+  if (!janelaImpressao) {
+    return alert('Por favor, permita pop-ups no seu navegador para imprimir a folha de condicional.')
+  }
+
+  janelaImpressao.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Condicional #${codCondicional}</title>
+        <style>
+          @page { margin: 0; size: auto; }
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: #000;
+            margin: 0;
+            padding: 12px;
+            max-width: 80mm;
+          }
+          .text-center { text-align: center; }
+          .divider { border-top: 1px dashed #000; margin: 8px 0; }
+          table { width: 100%; border-collapse: collapse; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+          .total { font-size: 13px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="text-center">
+          <strong style="font-size: 14px;">${nomeLoja.toUpperCase()}</strong><br>
+          ${empresa?.telefone ? `Tel: ${empresa.telefone}<br>` : ''}
+          <div class="divider"></div>
+          <strong>COMPROVANTE DE CONDICIONAL</strong>
+        </div>
+
+        <div class="divider"></div>
+        <div class="row"><span>Condicional:</span><span>#${codCondicional}</span></div>
+        <div class="row"><span>Data Envio:</span><span>${dataEnvio}</span></div>
+        <div class="row"><span>Devolver até:</span><span><strong>${dataDevolucaoPrevista}</strong></span></div>
+        <div class="row"><span>Cliente:</span><span>${nomeCliente}</span></div>
+        ${telCliente ? `<div class="row"><span>Contato:</span><span>${telCliente}</span></div>` : ''}
+        <div class="divider"></div>
+
+        <table>
+          <tbody>
+            ${itensHtml}
+          </tbody>
+        </table>
+
+        <div class="divider"></div>
+        <div class="row total">
+          <span>TOTAL DE PEÇAS:</span>
+          <span>${totalPecas} un</span>
+        </div>
+        <div class="row total" style="margin-top: 2px;">
+          <span>VALOR SOB CUSTÓDIA:</span>
+          <span>R$ ${totalValor.toFixed(2)}</span>
+        </div>
+
+        <div class="divider"></div>
+        <div style="font-size: 10px; text-align: justify; margin-top: 6px;">
+          Declaro que recebi as peças listadas acima sob regime de condicional, comprometendo-me a devolver as não adquiridas até a data prevista em perfeito estado.
+        </div>
+
+        <div style="margin-top: 35px; border-top: 1px solid #000; text-align: center; font-size: 11px; padding-top: 4px;">
+          Assinatura do Cliente
         </div>
 
         <script>
