@@ -1,1638 +1,207 @@
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../supabase'
-import { gerarComprovanteVenda, gerarTextoCupomWhatsApp, formatarIdVenda, DADOS_EMPRESA } from '../utils/pdfGenerator'
-
-const getIntervaloHojeBrasil = () => {
-  const agora = new Date()
-  const ano = agora.getFullYear()
-  const mes = String(agora.getMonth() + 1).padStart(2, '0')
-  const dia = String(agora.getDate()).padStart(2, '0')
-  const inicioDia = new Date(`${ano}-${mes}-${dia}T00:00:00`).toISOString()
-  const fimDia = new Date(`${ano}-${mes}-${dia}T23:59:59.999`).toISOString()
-  return { inicioDia, fimDia }
+// Dados padrão da empresa (caso não configurado no banco)
+export const DADOS_EMPRESA = {
+  nome: 'TECCO STORE',
+  documento: '',
+  telefone: '',
+  endereco: '',
+  cidadeUf: '',
+  instagram: '',
+  mensagemCupom: 'Obrigado pela preferência! Volte sempre!'
 }
 
-const IconStore = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
-    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-    <path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" />
-    <path d="M2 7h20" />
-  </svg>
-)
+// Formatação do ID da venda (ex: 5 -> 000005)
+export const formatarIdVenda = (id) => {
+  if (!id) return '000000'
+  return String(id).padStart(6, '0')
+}
 
-const IconPlus = ({ size = 16, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M5 12h14" />
-    <path d="M12 5v14" />
-  </svg>
-)
+// 1. GERADOR DO TEXTO PARA WHATSAPP COM DESCONTO INDIVIDUAL
+export const gerarTextoCupomWhatsApp = (venda, empresa, cashbackGerado = 0) => {
+  const nomeLoja = empresa?.nome || DADOS_EMPRESA.nome
+  const codVenda = formatarIdVenda(venda.id)
+  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  const nomeCliente = venda.clientes?.nome || 'Cliente'
 
-const IconMinus = ({ size = 14, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M5 12h14" />
-  </svg>
-)
+  let listaItensTxt = ''
+  if (Array.isArray(venda.itens)) {
+    venda.itens.forEach(item => {
+      const qtd = Number(item.quantidade || 1)
+      const preco = Number(item.preco || 0)
+      const descItem = Number(item.desconto || 0)
+      const subtotal = Number(item.subtotal || (qtd * preco - descItem))
 
-const IconTrash = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 6h18" />
-    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-  </svg>
-)
-
-const IconCheck = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-)
-
-const IconReceipt = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
-    <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
-    <path d="M12 17V7" />
-  </svg>
-)
-
-const IconSparkles = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-  </svg>
-)
-
-const IconCamera = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-    <circle cx="12" cy="13" r="3" />
-  </svg>
-)
-
-const IconAlertCircle = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="8" x2="12" y2="12" />
-    <line x1="12" y1="16" x2="12.01" y2="16" />
-  </svg>
-)
-
-const IconWhatsApp = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-  </svg>
-)
-
-export default function Vendas() {
-  const [produtos, setProdutos] = useState([])
-  const [variacoes, setVariacoes] = useState([])
-  const [clientes, setClientes] = useState([])
-  const [taxaCashback, setTaxaCashback] = useState(0)
-  const [diasValidadeCashback, setDiasValidadeCashback] = useState(30)
-  const [limiteAbatimentoCarrinho, setLimiteAbatimentoCarrinho] = useState(50)
-  const [dadosEmpresa, setDadosEmpresa] = useState(null)
-
-  const [clienteSelecionado, setClienteSelecionado] = useState('')
-  const [termoBuscaCliente, setTermoBuscaCliente] = useState('')
-  const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false)
-  const dropdownClienteRef = useRef(null)
-
-  const [pendenciasCliente, setPendenciasCliente] = useState([])
-  const [carregandoPendencias, setCarregandoPendencias] = useState(false)
-  const [modalPendenciasAberto, setModalPendenciasAberto] = useState(false)
-
-  const [quantidade, setQuantidade] = useState('1')
-  const [itensVenda, setItensVenda] = useState([])
-  const [formaPagamento, setFormaPagamento] = useState('dinheiro')
-  const [valorEntrada, setValorEntrada] = useState('')
-
-  const [linhasMisto, setLinhasMisto] = useState([])
-  const [tipoMistoAdd, setTipoMistoAdd] = useState('pix')
-  const [valorMistoAdd, setValorMistoAdd] = useState('')
-
-  const [termoBuscaProduto, setTermoBuscaProduto] = useState('')
-  const [produtoSelecionadoObj, setProdutoSelecionadoObj] = useState(null)
-  const [mostrarDropdownBusca, setMostrarDropdownBusca] = useState(false)
-  const dropdownRef = useRef(null)
-
-  const [modalEscolhaVarAberto, setModalEscolhaVarAberto] = useState(false)
-  const [prodParaEscolherVar, setProdParaEscolherVar] = useState(null)
-
-  const [modalCameraAberto, setModalCameraAberto] = useState(false)
-  const [html5QrCodeScanner, setHtml5QrCodeScanner] = useState(null)
-
-  const [descontoGlobal, setDescontoGlobal] = useState(0)
-  const [usarCashback, setUsarCashback] = useState(false)
-  const [valorRecebido, setValorRecebido] = useState('')
-  const [salvando, setSalvando] = useState(false)
-
-  const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
-  const [vendasDoDia, setVendasDoDia] = useState([])
-  const [carregandoCaixa, setCarregandoCaixa] = useState(false)
-  const [estornandoVendaId, setEstornandoVendaId] = useState(null)
-
-  const carregarDados = async () => {
-    const { data: prodData } = await supabase.from('produtos').select('*').order('nome')
-    const { data: varData } = await supabase.from('variacoes_grade').select('*')
-    const { data: cliData } = await supabase.from('clientes').select('*').order('nome')
-    const { data: cfgData } = await supabase.from('configuracoes').select('*')
-
-    if (prodData) setProdutos(prodData)
-    if (varData) setVariacoes(varData)
-    if (cliData) setClientes(cliData)
-
-    if (cfgData) {
-      const mapa = {}
-      cfgData.forEach(c => { mapa[c.chave] = c.valor })
-
-      const taxaParsed = parseFloat(mapa['cashback_percentual'])
-      setTaxaCashback(!isNaN(taxaParsed) ? taxaParsed : 0)
-
-      const diasParsed = parseInt(mapa['cashback_dias_validade'])
-      setDiasValidadeCashback(!isNaN(diasParsed) ? diasParsed : 30)
-
-      const tetoParsed = parseFloat(mapa['cashback_limite_carrinho'])
-      setLimiteAbatimentoCarrinho(!isNaN(tetoParsed) ? tetoParsed : 50)
-
-      setDadosEmpresa({
-        nome: mapa['empresa_nome'],
-        documento: mapa['empresa_documento'],
-        telefone: mapa['empresa_telefone'],
-        endereco: mapa['empresa_endereco'],
-        cidadeUf: mapa['empresa_cidade_uf'],
-        instagram: mapa['empresa_instagram'],
-        mensagemCupom: mapa['empresa_mensagem_cupom']
-      })
-    }
-  }
-
-  useEffect(() => {
-    carregarDados()
-  }, [])
-
-  const verificarPendenciasCliente = async (clienteId) => {
-    if (!clienteId) {
-      setPendenciasCliente([])
-      return
-    }
-    setCarregandoPendencias(true)
-    try {
-      const { data, error } = await supabase
-        .from('contas_a_receber')
-        .select('*')
-        .eq('cliente_id', parseInt(clienteId))
-        .eq('status', 'pendente')
-        .order('vencimento', { ascending: true })
-
-      if (error) throw error
-      setPendenciasCliente(data || [])
-    } catch (err) {
-      console.error('Erro ao consultar crediário:', err)
-    }
-    setCarregandoPendencias(false)
-  }
-
-  useEffect(() => {
-    if (clienteSelecionado) {
-      verificarPendenciasCliente(clienteSelecionado)
-    } else {
-      setPendenciasCliente([])
-    }
-  }, [clienteSelecionado])
-
-  useEffect(() => {
-    const handleClickFora = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setMostrarDropdownBusca(false)
+      listaItensTxt += `• ${qtd}x *${item.nomeProduto}*\n`
+      if (descItem > 0) {
+        listaItensTxt += `   De: R$ ${(qtd * preco).toFixed(2)} | Desc: -R$ ${descItem.toFixed(2)} ➔ *R$ ${subtotal.toFixed(2)}*\n`
+      } else {
+        listaItensTxt += `   Valor: R$ ${subtotal.toFixed(2)}\n`
       }
-      if (dropdownClienteRef.current && !dropdownClienteRef.current.contains(e.target)) {
-        setMostrarDropdownCliente(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickFora)
-    return () => document.removeEventListener('mousedown', handleClickFora)
-  }, [])
-
-  const clientesFiltradosBusca = clientes.filter(c => {
-    if (!termoBuscaCliente) return true
-    const t = termoBuscaCliente.toLowerCase()
-    return (
-      (c.nome && c.nome.toLowerCase().includes(t)) ||
-      (c.telefone && c.telefone.includes(t)) ||
-      (c.cpf && c.cpf.includes(t))
-    )
-  }).slice(0, 8)
-
-  const selecionarCliente = (c) => {
-    if (!c) {
-      setClienteSelecionado('')
-      setTermoBuscaCliente('')
-    } else {
-      setClienteSelecionado(String(c.id))
-      setTermoBuscaCliente(c.nome)
-    }
-    setUsarCashback(false)
-    setMostrarDropdownCliente(false)
+    })
   }
 
-  const produtosFiltradosBusca = produtos.filter(p => {
-    if (!termoBuscaProduto) return true
-    const t = termoBuscaProduto.toLowerCase()
-    const temNaVar = variacoes.some(v => v.produto_id === p.id && v.codigo_barras && v.codigo_barras.toLowerCase().includes(t))
-    return p.nome.toLowerCase().includes(t) || (p.codigo_barras && p.codigo_barras.toLowerCase().includes(t)) || temNaVar
-  }).slice(0, 8)
-
-  const selecionarProdutoBusca = (produto) => {
-    const vars = variacoes.filter(v => v.produto_id === produto.id)
-    if (vars.length > 0) {
-      setProdParaEscolherVar(produto)
-      setModalEscolhaVarAberto(true)
-      setMostrarDropdownBusca(false)
-    } else {
-      setProdutoSelecionadoObj(produto)
-      setTermoBuscaProduto(produto.nome)
-      setMostrarDropdownBusca(false)
-    }
+  let formaTxt = String(venda.forma_pagamento || '').toUpperCase()
+  if (formaTxt === 'MISTO' && Array.isArray(venda.pagamentos_detalhe)) {
+    formaTxt = venda.pagamentos_detalhe.map(p => `${p.tipo.toUpperCase()} (R$ ${Number(p.valor).toFixed(2)})`).join(', ')
   }
 
-  const adicionarItemAoPedido = (produto, qtdParam = 1, variacao = null) => {
-    if (!produto) return
-    const qtd = parseInt(qtdParam) || 1
-    if (qtd <= 0) return
+  let msg = `🛍️ *COMPROVANTE DE VENDA*\n`
+  msg += `*${nomeLoja.toUpperCase()}*\n`
+  if (empresa?.documento) msg += `CNPJ/CPF: ${empresa.documento}\n`
+  if (empresa?.telefone) msg += `WhatsApp: ${empresa.telefone}\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `📄 *Pedido:* #${codVenda}\n`
+  msg += `📅 *Data:* ${dataVenda}\n`
+  msg += `👤 *Cliente:* ${nomeCliente}\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `*ITENS COMPRADOS:*\n\n`
+  msg += `${listaItensTxt}\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
 
-    const itemKey = variacao ? `${produto.id}-${variacao.id}` : `${produto.id}-base`
-    const estoqueDisponivel = variacao ? variacao.estoque : produto.estoque
-
-    const itemExistente = itensVenda.find(i => i.itemKey === itemKey)
-    const qtdTotalPretendida = (itemExistente ? itemExistente.quantidade : 0) + qtd
-
-    if (estoqueDisponivel < qtdTotalPretendida) {
-      alert(`Estoque insuficiente! Disponível: ${estoqueDisponivel} un.`)
-      return
-    }
-
-    const nomeFormatado = variacao 
-      ? `${produto.nome} (${[variacao.tamanho, variacao.cor].filter(Boolean).join('/')})`
-      : produto.nome
-
-    const precoUnit = Number(produto.preco) || 0
-
-    if (itemExistente) {
-      setItensVenda(itensVenda.map(item => {
-        if (item.itemKey === itemKey) {
-          const novaQtd = item.quantidade + qtd
-          const descTotal = Number(item.desconto || 0)
-          const novoSubtotal = Math.max(0, (novaQtd * item.preco) - descTotal)
-          return { ...item, quantidade: novaQtd, subtotal: novoSubtotal }
-        }
-        return item
-      }))
-    } else {
-      setItensVenda([...itensVenda, {
-        id: Date.now(),
-        itemKey,
-        produtoId: produto.id,
-        variacaoId: variacao ? variacao.id : null,
-        nomeProduto: nomeFormatado,
-        preco: precoUnit,
-        preco_custo: Number(produto.preco_custo) || 0,
-        quantidade: qtd,
-        desconto: 0,
-        subtotal: precoUnit * qtd
-      }])
-    }
-
-    setProdutoSelecionadoObj(null)
-    setTermoBuscaProduto('')
-    setQuantidade('1')
+  if (Number(venda.desconto_total_itens) > 0) {
+    msg += `🏷️ Desconto nos Itens: -R$ ${Number(venda.desconto_total_itens).toFixed(2)}\n`
+  }
+  if (Number(venda.desconto_global) > 0) {
+    msg += `🏷️ Desconto Geral: -R$ ${Number(venda.desconto_global).toFixed(2)}\n`
   }
 
-  const alterarDescontoItem = (id, valorDigitado) => {
-    const descNum = parseFloat(String(valorDigitado).replace(',', '.')) || 0
+  msg += `💰 *TOTAL: R$ ${Number(venda.total).toFixed(2)}*\n`
+  msg += `💳 *Forma de Pagamento:* ${formaTxt}\n`
 
-    setItensVenda(itensVenda.map(item => {
-      if (item.id === id) {
-        const totalBrutoItem = item.quantidade * item.preco
-        const descontoAplicado = Math.min(totalBrutoItem, Math.max(0, descNum))
-        return {
-          ...item,
-          desconto: valorDigitado === '' ? '' : descontoAplicado,
-          subtotal: Math.max(0, totalBrutoItem - (Number(descontoAplicado) || 0))
-        }
-      }
-      return item
-    }))
+  if (cashbackGerado > 0) {
+    msg += `\n✨ *Você acumulou:* +R$ ${cashbackGerado.toFixed(2)} de Cashback!\n`
   }
 
-  const handleKeyDownBusca = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      const codigoLimpo = termoBuscaProduto.trim()
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `${empresa?.mensagemCupom || DADOS_EMPRESA.mensagemCupom}`
 
-      const varExata = variacoes.find(v => v.codigo_barras && v.codigo_barras.trim() === codigoLimpo)
-      if (varExata) {
-        const prodPai = produtos.find(p => p.id === varExata.produto_id)
-        if (prodPai) {
-          adicionarItemAoPedido(prodPai, quantidade, varExata)
-          return
-        }
-      }
+  return msg
+}
 
-      const porCodigo = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === codigoLimpo)
-      if (porCodigo) {
-        const vars = variacoes.filter(v => v.produto_id === porCodigo.id)
-        if (vars.length > 0) {
-          setProdParaEscolherVar(porCodigo)
-          setModalEscolhaVarAberto(true)
-        } else {
-          adicionarItemAoPedido(porCodigo, quantidade)
-        }
-        return
-      }
+// 2. IMPRESSÃO DO COMPROVANTE (TÉRMICO 80MM OU A4)
+export const gerarComprovanteVenda = (venda, empresa) => {
+  const nomeLoja = empresa?.nome || DADOS_EMPRESA.nome
+  const codVenda = formatarIdVenda(venda.id)
+  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
+  const nomeCliente = venda.clientes?.nome || 'Cliente Avulso'
 
-      if (produtoSelecionadoObj) {
-        adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
-        return
-      }
+  let itensHtml = ''
+  if (Array.isArray(venda.itens)) {
+    venda.itens.forEach(item => {
+      const qtd = Number(item.quantidade || 1)
+      const preco = Number(item.preco || 0)
+      const descItem = Number(item.desconto || 0)
+      const subtotal = Number(item.subtotal || (qtd * preco - descItem))
 
-      if (produtosFiltradosBusca.length === 1) {
-        selecionarProdutoBusca(produtosFiltradosBusca[0])
-      }
-    }
+      itensHtml += `
+        <tr>
+          <td style="padding: 4px 0;">
+            <div><strong>${item.nomeProduto}</strong></div>
+            <div style="font-size: 11px; color: #555;">
+              ${qtd} un x R$ ${preco.toFixed(2)}
+              ${descItem > 0 ? `<span style="color: #b91c1c;"> (Desc: -R$ ${descItem.toFixed(2)})</span>` : ''}
+            </div>
+          </td>
+          <td style="text-align: right; vertical-align: top; padding: 4px 0; font-weight: bold;">
+            R$ ${subtotal.toFixed(2)}
+          </td>
+        </tr>
+      `
+    })
   }
 
-  const abrirScannerCamera = async () => {
-    setModalCameraAberto(true)
-    if (!window.Html5Qrcode) {
-      const script = document.createElement('script')
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
-      script.onload = () => iniciarLeitorHtml5()
-      document.body.appendChild(script)
-    } else {
-      setTimeout(() => iniciarLeitorHtml5(), 200)
-    }
+  let formaTxt = String(venda.forma_pagamento || '').toUpperCase()
+  if (formaTxt === 'MISTO' && Array.isArray(venda.pagamentos_detalhe)) {
+    formaTxt = venda.pagamentos_detalhe.map(p => `${p.tipo.toUpperCase()} (R$ ${Number(p.valor).toFixed(2)})`).join(', ')
   }
 
-  const iniciarLeitorHtml5 = () => {
-    try {
-      const html5QrCode = new window.Html5Qrcode("reader-camera")
-      setHtml5QrCodeScanner(html5QrCode)
-      const config = { fps: 10, qrbox: { width: 250, height: 160 } }
-      html5QrCode.start(
-        { facingMode: "environment" },
-        config,
-        (decodedText) => {
-          if (navigator.vibrate) navigator.vibrate(100)
-          const codigo = decodedText.trim()
+  const janelaImpressao = window.open('', '_blank', 'width=380,height=600')
+  if (!janelaImpressao) {
+    return alert('Por favor, permita pop-ups no seu navegador para imprimir o comprovante.')
+  }
 
-          const varAchada = variacoes.find(v => v.codigo_barras && v.codigo_barras.trim() === codigo)
-          if (varAchada) {
-            const prod = produtos.find(p => p.id === varAchada.produto_id)
-            if (prod) {
-              adicionarItemAoPedido(prod, 1, varAchada)
-              fecharScannerCamera(html5QrCode)
-              return alert(`✅ ${prod.nome} (${varAchada.tamanho}) adicionado!`)
-            }
+  janelaImpressao.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Comprovante #${codVenda}</title>
+        <style>
+          @page { margin: 0; size: auto; }
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: #000;
+            margin: 0;
+            padding: 12px;
+            max-width: 80mm;
           }
-
-          const prod = produtos.find(p => p.codigo_barras && p.codigo_barras.trim() === codigo)
-          if (prod) {
-            fecharScannerCamera(html5QrCode)
-            const vars = variacoes.filter(v => v.produto_id === prod.id)
-            if (vars.length > 0) {
-              setProdParaEscolherVar(prod)
-              setModalEscolhaVarAberto(true)
-            } else {
-              adicionarItemAoPedido(prod, 1)
-              alert(`✅ ${prod.nome} adicionado!`)
-            }
-          } else {
-            alert(`Código "${codigo}" não cadastrado.`)
-          }
-        },
-        () => {}
-      ).catch(err => {
-        alert('Erro de câmera: ' + err)
-        setModalCameraAberto(false)
-      })
-    } catch (err) {
-      alert('Erro: ' + err.message)
-      setModalCameraAberto(false)
-    }
-  }
-
-  const fecharScannerCamera = (instanciaScanner = html5QrCodeScanner) => {
-    if (instanciaScanner) {
-      try {
-        instanciaScanner.stop().then(() => instanciaScanner.clear()).catch(() => {})
-      } catch (e) {}
-    }
-    setModalCameraAberto(false)
-    setHtml5QrCodeScanner(null)
-  }
-
-  const clienteAtual = clientes.find(c => c.id === parseInt(clienteSelecionado))
-  const saldoCashbackDisponivel = Number(clienteAtual?.saldo_cashback || 0)
-
-  const totalPendenteCliente = pendenciasCliente.reduce((sum, c) => {
-    return sum + Math.max(0, Number(c.valor || 0) - Number(c.valor_pago || 0))
-  }, 0)
-
-  const hojeData = new Date()
-  hojeData.setHours(0, 0, 0, 0)
-  const temContaVencida = pendenciasCliente.some(c => {
-    if (!c.vencimento) return false
-    const dVenc = new Date(c.vencimento + 'T00:00:00')
-    return dVenc < hojeData
-  })
-
-  const subtotalItens = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
-  const totalDescontosIndividuais = itensVenda.reduce((sum, item) => sum + (Number(item.desconto) || 0), 0)
-
-  const descontoGlobalManual = parseFloat(descontoGlobal) || 0
-  const valorPosDesconto = Math.max(0, subtotalItens - descontoGlobalManual)
-
-  const tetoPermitidoReais = (valorPosDesconto * (limiteAbatimentoCarrinho / 100))
-  const valorAbatidoCashback = usarCashback ? Math.min(valorPosDesconto, saldoCashbackDisponivel, tetoPermitidoReais) : 0
-  const totalComDesconto = Math.max(0, valorPosDesconto - valorAbatidoCashback)
-  const novoCashbackGerado = taxaCashback > 0 ? totalComDesconto * (taxaCashback / 100) : 0
-
-  const totalPagoMisto = linhasMisto.reduce((s, l) => s + Number(l.valor || 0), 0)
-  const restanteMisto = Math.max(0, totalComDesconto - totalPagoMisto)
-
-  const adicionarLinhaMisto = () => {
-    const val = parseFloat(valorMistoAdd) || 0
-    if (val <= 0) return alert('Informe um valor válido maior que zero.')
-    if (val > (restanteMisto + 0.001)) {
-      return alert(`O valor (R$ ${val.toFixed(2)}) ultrapassa o restante a pagar (R$ ${restanteMisto.toFixed(2)})!`)
-    }
-
-    setLinhasMisto([...linhasMisto, { id: Date.now(), tipo: tipoMistoAdd, valor: val }])
-    setValorMistoAdd('')
-  }
-
-  const removerLinhaMisto = (id) => {
-    setLinhasMisto(linhasMisto.filter(l => l.id !== id))
-  }
-
-  const numValorRecebido = parseFloat(valorRecebido) || 0
-  const troco = formaPagamento === 'dinheiro' && numValorRecebido > totalComDesconto ? numValorRecebido - totalComDesconto : 0
-  const numValorEntrada = parseFloat(valorEntrada) || 0
-  const saldoRestanteCrediario = Math.max(0, totalComDesconto - numValorEntrada)
-
-  const abrirFechamentoCaixa = async () => {
-    setCarregandoCaixa(true)
-    setModalCaixaAberto(true)
-    const { inicioDia, fimDia } = getIntervaloHojeBrasil()
-
-    const { data } = await supabase
-      .from('vendas')
-      .select('*, clientes(nome)')
-      .gte('created_at', inicioDia)
-      .lte('created_at', fimDia)
-      .neq('status', 'cancelada')
-      .order('created_at', { ascending: false })
-
-    if (data) setVendasDoDia(data)
-    setCarregandoCaixa(false)
-  }
-
-  const estornarVenda = async (venda) => {
-    if (!confirm(`Tem certeza que deseja cancelar e estornar a Venda #${venda.id} de R$ ${Number(venda.total).toFixed(2)}?\n\n• As peças voltarão ao estoque\n• O saldo financeiro será estornado\n• O crediário/cashback vinculado será revertido.`)) {
-      return
-    }
-
-    setEstornandoVendaId(venda.id)
-    try {
-      if (Array.isArray(venda.itens)) {
-        for (const item of venda.itens) {
-          const qtdDevolver = Number(item.quantidade || 1)
-          if (item.variacaoId) {
-            const v = variacoes.find(x => x.id === item.variacaoId)
-            const estAtual = v ? Number(v.estoque || 0) : 0
-            await supabase.from('variacoes_grade').update({ estoque: estAtual + qtdDevolver }).eq('id', item.variacaoId)
-          } else if (item.produtoId) {
-            const p = produtos.find(x => x.id === item.produtoId)
-            const estAtual = p ? Number(p.estoque || 0) : 0
-            await supabase.from('produtos').update({ estoque: estAtual + qtdDevolver }).eq('id', item.produtoId)
-          }
-        }
-      }
-
-      await supabase
-        .from('contas_a_receber')
-        .delete()
-        .ilike('descricao', `%Venda #${venda.id}%`)
-
-      if (venda.cliente_id) {
-        const { data: movs } = await supabase
-          .from('cashback_movimentacoes')
-          .select('*')
-          .eq('venda_id', venda.id)
-
-        if (movs && movs.length > 0) {
-          let ajusteSaldo = 0
-          for (const m of movs) {
-            if (m.tipo === 'credito') ajusteSaldo -= Number(m.valor || 0)
-            if (m.tipo === 'resgate') ajusteSaldo += Number(m.valor || 0)
-            await supabase.from('cashback_movimentacoes').update({ status: 'estornado' }).eq('id', m.id)
-          }
-
-          const { data: cliAtualizado } = await supabase.from('clientes').select('saldo_cashback').eq('id', venda.cliente_id).single()
-          if (cliAtualizado) {
-            const novoSaldo = Math.max(0, Number(cliAtualizado.saldo_cashback || 0) + ajusteSaldo)
-            await supabase.from('clientes').update({ saldo_cashback: novoSaldo }).eq('id', venda.cliente_id)
-          }
-        }
-      }
-
-      const { error: errVenda } = await supabase
-        .from('vendas')
-        .update({ status: 'cancelada' })
-        .eq('id', venda.id)
-
-      if (errVenda) throw errVenda
-
-      alert(`Venda #${venda.id} cancelada com sucesso! O estoque foi restaurado.`)
-      await carregarDados()
-      await abrirFechamentoCaixa()
-    } catch (err) {
-      alert('Erro ao estornar venda: ' + err.message)
-    }
-    setEstornandoVendaId(null)
-  }
-
-  const resumoTotais = vendasDoDia.reduce((acc, v) => {
-    const total = Number(v.total || 0)
-    acc.totalGeral += total
-    acc.qtdPedidos += 1
-
-    if (v.forma_pagamento === 'misto' && Array.isArray(v.pagamentos_detalhe)) {
-      v.pagamentos_detalhe.forEach(p => {
-        const val = Number(p.valor || 0)
-        if (p.tipo === 'dinheiro') acc.dinheiro += val
-        else if (p.tipo === 'pix') acc.pix += val
-        else if (p.tipo === 'debito') acc.debito += val
-        else if (p.tipo === 'credito') acc.credito += val
-        else if (p.tipo === 'crediario') acc.crediario += val
-      })
-    } else {
-      if (v.forma_pagamento === 'dinheiro') acc.dinheiro += total
-      else if (v.forma_pagamento === 'pix') acc.pix += total
-      else if (v.forma_pagamento === 'debito') acc.debito += total
-      else if (v.forma_pagamento === 'credito') acc.credito += total
-      else if (v.forma_pagamento === 'crediario') acc.crediario += total
-    }
-    return acc
-  }, { totalGeral: 0, qtdPedidos: 0, dinheiro: 0, pix: 0, debito: 0, credito: 0, crediario: 0 })
-
-  const alterarQtdItem = (id, delta) => {
-    setItensVenda(itensVenda.map(item => {
-      if (item.id === id) {
-        const novaQtd = item.quantidade + delta
-        if (novaQtd <= 0) return null
-
-        let estMax = 9999
-        if (item.variacaoId) {
-          const v = variacoes.find(x => x.id === item.variacaoId)
-          estMax = v ? v.estoque : 9999
-        } else {
-          const p = produtos.find(x => x.id === item.produtoId)
-          estMax = p ? p.estoque : 9999
-        }
-
-        if (delta > 0 && novaQtd > estMax) {
-          alert(`Estoque máximo atingido (${estMax} un)!`)
-          return item
-        }
-        const descNum = Number(item.desconto) || 0
-        const novoSubtotal = Math.max(0, (novaQtd * item.preco) - descNum)
-        return { ...item, quantidade: novaQtd, subtotal: novoSubtotal }
-      }
-      return item
-    }).filter(Boolean))
-  }
-
-  const removerItem = (id) => {
-    setItensVenda(itensVenda.filter(item => item.id !== id))
-  }
-
-  const enviarAvisoCobrancaZap = (c) => {
-    if (!clienteAtual?.telefone) return alert('Cliente sem telefone cadastrado!')
-    const numLimpo = clienteAtual.telefone.replace(/\D/g, '')
-    const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
-    const saldo = Number(c.valor || 0) - Number(c.valor_pago || 0)
-    const dataVenc = c.vencimento ? new Date(c.vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : 'a combinar'
-
-    const msg = encodeURIComponent(
-      `Olá, ${clienteAtual.nome}! Tudo bem? ✨\n\n` +
-      `Passando para lembrar sobre a sua compra em aberto no crediário:\n` +
-      `📄 *Referência:* ${c.descricao || 'Compra na Loja'}\n` +
-      `💰 *Saldo Pendente:* R$ ${saldo.toFixed(2)}\n` +
-      `📅 *Vencimento:* ${dataVenc}\n\n` +
-      `Ficamos à disposição caso precise tirar dúvidas ou queira a chave PIX para acerto. Abraços!`
-    )
-    window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${msg}`, '_blank')
-  }
-
-  const finalizarVenda = async () => {
-    if (itensVenda.length === 0) return alert('Adicione produtos à venda.')
-
-    if (formaPagamento === 'misto') {
-      if (Math.abs(totalPagoMisto - totalComDesconto) > 0.01) {
-        return alert(`O total das formas de pagamento (R$ ${totalPagoMisto.toFixed(2)}) deve ser exatamente igual ao total da venda (R$ ${totalComDesconto.toFixed(2)})!`)
-      }
-      const temCrediarioMisto = linhasMisto.some(l => l.tipo === 'crediario')
-      if (temCrediarioMisto && !clienteSelecionado) {
-        return alert('Para incluir Crediário no pagamento misto, selecione o cliente!')
-      }
-    }
-
-    if (formaPagamento === 'crediario' && !clienteSelecionado) return alert('Selecione um cliente para venda a prazo.')
-    if (formaPagamento === 'crediario' && numValorEntrada > totalComDesconto) return alert('Entrada maior que o total da venda!')
-
-    setSalvando(true)
-    const clienteId = clienteSelecionado ? parseInt(clienteSelecionado) : null
-    const nomeCliente = clienteAtual ? clienteAtual.nome : 'Cliente Avulso'
-    const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
-
-    try {
-      const payloadVenda = {
-        total: totalComDesconto,
-        forma_pagamento: formaPagamento,
-        itens: itensVenda.map(i => ({
-          ...i,
-          desconto: Number(i.desconto) || 0
-        })),
-        desconto_global: descontoGlobalManual,
-        desconto_total_itens: totalDescontosIndividuais,
-        cliente_id: clienteId,
-        pagamentos_detalhe: formaPagamento === 'misto' ? linhasMisto : [],
-        created_at: new Date().toISOString()
-      }
-
-      const { data: vendaCriada, error: erroVenda } = await supabase
-        .from('vendas')
-        .insert([payloadVenda])
-        .select()
-        .single()
-
-      if (erroVenda) throw erroVenda
-
-      let saldoFinalCliente = saldoCashbackDisponivel
-      if (clienteId) {
-        if (usarCashback && valorAbatidoCashback > 0) {
-          saldoFinalCliente -= valorAbatidoCashback
-          await supabase.from('cashback_movimentacoes').insert([{
-            cliente_id: clienteId,
-            venda_id: vendaCriada.id,
-            tipo: 'resgate',
-            valor: valorAbatidoCashback,
-            saldo_restante: 0,
-            status: 'utilizado',
-            observacao: `Resgate aplicado na Venda #${vendaCriada.id}`
-          }])
-        }
-
-        if (novoCashbackGerado > 0) {
-          saldoFinalCliente += novoCashbackGerado
-          const dataExp = new Date()
-          dataExp.setDate(dataExp.getDate() + (parseInt(diasValidadeCashback) || 30))
-
-          await supabase.from('cashback_movimentacoes').insert([{
-            cliente_id: clienteId,
-            venda_id: vendaCriada.id,
-            tipo: 'credito',
-            valor: novoCashbackGerado,
-            saldo_restante: novoCashbackGerado,
-            data_expiracao: dataExp.toISOString(),
-            status: 'ativo',
-            observacao: `Bônus gerado na Venda #${vendaCriada.id} (${taxaCashback}%)`
-          }])
-        }
-
-        await supabase.from('clientes').update({ saldo_cashback: Math.max(0, saldoFinalCliente) }).eq('id', clienteId)
-      }
-
-      if (formaPagamento === 'crediario') {
-        const dataVencimento = new Date()
-        dataVencimento.setDate(dataVencimento.getDate() + 30)
-
-        await supabase.from('contas_a_receber').insert([{
-          descricao: `Venda #${vendaCriada.id} - ${nomeCliente}`,
-          valor: totalComDesconto,
-          valor_pago: numValorEntrada,
-          vencimento: dataVencimento.toISOString().split('T')[0],
-          status: numValorEntrada >= totalComDesconto ? 'pago' : 'pendente',
-          cliente_id: clienteId
-        }])
-      } else if (formaPagamento === 'misto') {
-        const parcelaCrediario = linhasMisto.find(l => l.tipo === 'crediario')
-        if (parcelaCrediario && parcelaCrediario.valor > 0) {
-          const dataVencimento = new Date()
-          dataVencimento.setDate(dataVencimento.getDate() + 30)
-
-          await supabase.from('contas_a_receber').insert([{
-            descricao: `Venda #${vendaCriada.id} (Parcela Crediário) - ${nomeCliente}`,
-            valor: Number(parcelaCrediario.valor),
-            valor_pago: 0,
-            vencimento: dataVencimento.toISOString().split('T')[0],
-            status: 'pendente',
-            cliente_id: clienteId
-          }])
-        }
-      }
-
-      for (const item of itensVenda) {
-        if (item.variacaoId) {
-          const v = variacoes.find(x => x.id === item.variacaoId)
-          if (v) {
-            await supabase.from('variacoes_grade').update({ estoque: Math.max(0, v.estoque - item.quantidade) }).eq('id', item.variacaoId)
-          }
-        }
-        const p = produtos.find(x => x.id === item.produtoId)
-        if (p) {
-          await supabase.from('produtos').update({ estoque: Math.max(0, p.estoque - item.quantidade) }).eq('id', item.produtoId)
-        }
-      }
-
-      const codFormatado = formatarIdVenda(vendaCriada.id)
-
-      if (telefoneCliente && confirm(`Venda #${codFormatado} finalizada!\nDeseja enviar o Cupom Digital para o WhatsApp de ${nomeCliente}?`)) {
-        const numLimpo = telefoneCliente.replace(/\D/g, '')
-        const ddiTel = numLimpo.length <= 11 ? `55${numLimpo}` : numLimpo
-        const vendaCompleta = { ...vendaCriada, clientes: { nome: nomeCliente, saldo_cashback: saldoFinalCliente } }
-        const textoCupom = gerarTextoCupomWhatsApp(vendaCompleta, dadosEmpresa, novoCashbackGerado)
-        window.open(`https://api.whatsapp.com/send?phone=${ddiTel}&text=${encodeURIComponent(textoCupom)}`, '_blank')
-      } else if (confirm(`Venda #${codFormatado} finalizada!\nDeseja abrir o comprovante para impressão?`)) {
-        gerarComprovanteVenda({ ...vendaCriada, clientes: { nome: nomeCliente } }, dadosEmpresa)
-      }
-
-      setItensVenda([])
-      setClienteSelecionado('')
-      setTermoBuscaCliente('')
-      setFormaPagamento('dinheiro')
-      setValorEntrada('')
-      setLinhasMisto([])
-      setDescontoGlobal(0)
-      setUsarCashback(false)
-      setValorRecebido('')
-      setPendenciasCliente([])
-    } catch (err) {
-      alert('Erro ao gravar venda: ' + err.message)
-    }
-
-    setSalvando(false)
-    await carregarDados()
-  }
-
-  return (
-    <div className="vendas-wrapper">
-      <style>{`
-        .vendas-wrapper { max-width: 1200px; margin: 0 auto; }
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
-        .page-title { font-size: 1.75rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; }
-        .page-subtitle { color: #64748b; font-size: 13px; margin: 4px 0 0 0; font-weight: 500; display: flex; align-items: center; gap: 6px; }
-        
-        .form-container, .table-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
-        .form-section h2, .table-container h2 { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
-        .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
-        .form-group { display: flex; flex-direction: column; flex: 1; position: relative; }
-        .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .form-group input, .form-group select { height: 42px; padding: 0 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 0.95rem; }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
-
-        .busca-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 260px; overflow-y: auto; z-index: 50; }
-        .busca-item { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
-        .busca-item:hover { background: #eff6ff; }
-        .busca-item-title { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
-        .busca-item-sub { font-size: 0.75rem; color: #64748b; }
-
-        .radar-box-ok {
-          background: #ecfdf5;
-          border: 1px solid #a7f3d0;
-          border-radius: 10px;
-          padding: 8px 12px;
-          margin-top: 8px;
-          font-size: 0.82rem;
-          color: #065f46;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .radar-box-warning {
-          background: #fffbeb;
-          border: 1px solid #fde68a;
-          border-radius: 10px;
-          padding: 10px 14px;
-          margin-top: 8px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .radar-box-danger {
-          background: #fef2f2;
-          border: 1px solid #fecaca;
-          border-radius: 10px;
-          padding: 10px 14px;
-          margin-top: 8px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .btn-ver-radar {
-          background: #ffffff;
-          border: 1px solid #cbd5e1;
-          border-radius: 6px;
-          padding: 5px 10px;
-          font-size: 0.78rem;
-          font-weight: 700;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-        }
-        .btn-ver-radar:hover { background: #f8fafc; border-color: #94a3b8; }
-
-        .misto-container { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
-        .misto-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .misto-title { font-size: 0.78rem; font-weight: 800; color: #334155; text-transform: uppercase; }
-        .misto-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px; font-size: 0.88rem; }
-
-        .btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; padding: 0.65rem 1.25rem; font-size: 0.9rem; transition: all 0.15s ease; }
-        .btn-primary { background: #2563eb; color: #ffffff; }
-        .btn-primary:hover { background: #1d4ed8; }
-        .btn-success { background: #10b981; color: #ffffff; }
-        .btn-danger { background: #fee2e2; color: #dc2626; }
-        .btn-secondary { background: #f1f5f9; color: #475569; }
-        .btn-camera { background: #0f172a; color: #ffffff; border-radius: 10px; height: 42px; padding: 0 1rem; gap: 6px; white-space: nowrap; }
-        .btn-camera:hover { background: #1e293b; }
-        .btn-outline-dark { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
-        .btn-outline-dark:hover { background: #f8fafc; }
-        .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
-        .btn-lg { padding: 0.85rem 1.75rem; font-size: 1.05rem; }
-
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { background: #f8fafc; color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.85rem 1rem; border-bottom: 1px solid #e2e8f0; }
-        td { padding: 1rem; font-size: 0.9rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
-        tbody tr:hover { background: #f8fafc; }
-        .total-section { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-        .total-value { font-size: 1.85rem; font-weight: 800; color: #2563eb; }
-        
-        .cashback-card-alert { background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-
-        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 110; backdrop-filter: blur(2px); padding: 1rem; }
-        .modal-card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
-        .var-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin: 1rem 0; }
-        .var-btn { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; background: #ffffff; cursor: pointer; text-align: left; transition: all 0.15s; }
-        .var-btn:hover { border-color: #2563eb; background: #eff6ff; }
-        .var-btn strong { display: block; color: #0f172a; font-size: 0.95rem; }
-        .var-btn span { font-size: 0.75rem; color: #64748b; }
-
-        .modal-camera-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); display: flex; align-items: center; justify-content: center; z-index: 120; padding: 1rem; }
-        .modal-camera-box { background: #ffffff; width: 100%; max-width: 440px; border-radius: 18px; padding: 1.5rem; text-align: center; }
-        #reader-camera { width: 100%; border-radius: 12px; overflow: hidden; }
-
-        .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
-        .modal-sheet { background: #ffffff; width: 100%; max-width: 680px; max-height: 90vh; overflow-y: auto; border-radius: 18px; padding: 1.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
-        .modal-top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem; margin-bottom: 1.25rem; }
-        .modal-heading { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
-        .modal-sub { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
-        .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.25rem; }
-        .kpi-mini { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
-        .kpi-mini-title { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .kpi-mini-val { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-top: 4px; display: block; }
-        .caixa-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 6px; font-size: 0.9rem; }
-        .caixa-gaveta { background: #ecfdf5; border: 1px solid #a7f3d0; }
-
-        .input-desc-item {
-          width: 85px;
-          height: 32px;
-          padding: 0 6px;
-          border: 1px solid #cbd5e1;
-          border-radius: 6px;
-          font-size: 0.85rem;
-          font-weight: 700;
-          color: #dc2626;
-          text-align: right;
-          outline: none;
-        }
-        .input-desc-item:focus {
-          border-color: #2563eb;
-        }
-
-        @media (max-width: 768px) {
-          .form-row { flex-direction: column; gap: 0.75rem; }
-          .kpi-row { grid-template-columns: 1fr; }
-        }
-      `}</style>
-
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">PDV (Frente de Caixa)</h1>
-          <p className="page-subtitle"><IconStore /> {dadosEmpresa?.nome || DADOS_EMPRESA.nome}</p>
+          .text-center { text-align: center; }
+          .divider { border-top: 1px dashed #000; margin: 8px 0; }
+          table { width: 100%; border-collapse: collapse; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+          .total { font-size: 14px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="text-center">
+          <strong style="font-size: 14px;">${nomeLoja.toUpperCase()}</strong><br>
+          ${empresa?.documento ? `CNPJ/CPF: ${empresa.documento}<br>` : ''}
+          ${empresa?.endereco ? `${empresa.endereco}<br>` : ''}
+          ${empresa?.telefone ? `Tel: ${empresa.telefone}<br>` : ''}
+          <div class="divider"></div>
+          <strong>CUPOM DE VENDA</strong>
         </div>
 
-        <button className="btn btn-outline-dark" onClick={abrirFechamentoCaixa} style={{ gap: '8px' }}>
-          <IconReceipt /> Resumo do Dia (Caixa)
-        </button>
-      </div>
+        <div class="divider"></div>
+        <div class="row"><span>Pedido:</span><span>#${codVenda}</span></div>
+        <div class="row"><span>Data:</span><span>${dataVenda}</span></div>
+        <div class="row"><span>Cliente:</span><span>${nomeCliente}</span></div>
+        <div class="divider"></div>
 
-      <div className="form-container">
-        <div className="form-section">
-          <h2>Dados da Venda</h2>
-          <div className="form-row">
-            <div className="form-group" style={{ flex: 2 }} ref={dropdownClienteRef}>
-              <label>Cliente (Buscar por Nome, Telefone ou CPF)</label>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <input 
-                  type="text" 
-                  placeholder="Digite o nome do cliente ou deixe em branco..." 
-                  value={termoBuscaCliente}
-                  onChange={e => {
-                    setTermoBuscaCliente(e.target.value)
-                    setMostrarDropdownCliente(true)
-                    if (!e.target.value) setClienteSelecionado('')
-                  }}
-                  onFocus={() => setMostrarDropdownCliente(true)}
-                  style={{ width: '100%' }}
-                />
-                {clienteSelecionado && (
-                  <button 
-                    type="button" 
-                    onClick={() => selecionarCliente(null)} 
-                    style={{ border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', color: '#64748b' }}
-                    title="Remover cliente"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+        <table>
+          <tbody>
+            ${itensHtml}
+          </tbody>
+        </table>
 
-              {clienteSelecionado && (
-                <div>
-                  {carregandoPendencias ? (
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>
-                      Consultando situação do crediário...
-                    </div>
-                  ) : pendenciasCliente.length === 0 ? (
-                    <div className="radar-box-ok">
-                      <span>🟢</span>
-                      <strong>Crediário Liberado:</strong> Nenhuma pendência em aberto.
-                    </div>
-                  ) : (
-                    <div className={temContaVencida ? 'radar-box-danger' : 'radar-box-warning'}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <IconAlertCircle />
-                        <div>
-                          <strong style={{ fontSize: '0.85rem', color: temContaVencida ? '#b91c1c' : '#92400e', display: 'block' }}>
-                            {pendenciasCliente.length} compra(s) pendente(s) • Total: R$ {totalPendenteCliente.toFixed(2)}
-                          </strong>
-                          <span style={{ fontSize: '0.74rem', color: temContaVencida ? '#dc2626' : '#b45309' }}>
-                            {temContaVencida ? '⚠️ Possui parcelas vencidas no crediário!' : 'Todas dentro do prazo de vencimento.'}
-                          </span>
-                        </div>
-                      </div>
+        <div class="divider"></div>
 
-                      <button 
-                        type="button" 
-                        className="btn-ver-radar"
-                        onClick={() => setModalPendenciasAberto(true)}
-                      >
-                        👁️ Ver Detalhes ({pendenciasCliente.length})
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+        ${Number(venda.desconto_total_itens) > 0 ? `
+          <div class="row" style="color: #b91c1c;">
+            <span>Desc. nos Itens:</span>
+            <span>-R$ ${Number(venda.desconto_total_itens).toFixed(2)}</span>
+          </div>` : ''}
 
-              {mostrarDropdownCliente && (
-                <div className="busca-dropdown">
-                  <div 
-                    className="busca-item" 
-                    onClick={() => selecionarCliente(null)}
-                    style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}
-                  >
-                    <div>
-                      <div className="busca-item-title">👤 Cliente Avulso (Não identificado)</div>
-                      <div className="busca-item-sub">Venda sem cadastro prévio</div>
-                    </div>
-                  </div>
-                  {clientesFiltradosBusca.map(c => (
-                    <div 
-                      key={c.id} 
-                      className="busca-item"
-                      onClick={() => selecionarCliente(c)}
-                    >
-                      <div>
-                        <div className="busca-item-title">{c.nome}</div>
-                        <div className="busca-item-sub">
-                          {c.telefone ? `Tel: ${c.telefone}` : 'Sem telefone'} {c.cpf ? `• CPF: ${c.cpf}` : ''}
-                        </div>
-                      </div>
-                      {c.saldo_cashback > 0 && (
-                        <strong style={{ color: '#ca8a04', fontSize: '0.8rem' }}>
-                          Cashback: R$ {Number(c.saldo_cashback).toFixed(2)}
-                        </strong>
-                      )}
-                    </div>
-                  ))}
-                  {clientesFiltradosBusca.length === 0 && (
-                    <div style={{ padding: '12px', fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>
-                      Nenhum cliente com este nome ou telefone.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+        ${Number(venda.desconto_global) > 0 ? `
+          <div class="row" style="color: #b91c1c;">
+            <span>Desc. Geral:</span>
+            <span>-R$ ${Number(venda.desconto_global).toFixed(2)}</span>
+          </div>` : ''}
 
-            <div className="form-group" style={{ flex: 1.5 }}>
-              <label>Forma de Pagamento</label>
-              <select value={formaPagamento} onChange={(e) => { setFormaPagamento(e.target.value); setLinhasMisto([]); }}>
-                <option value="dinheiro">Dinheiro (À Vista)</option>
-                <option value="pix">PIX (À Vista)</option>
-                <option value="debito">Cartão de Débito</option>
-                <option value="credito">Cartão de Crédito</option>
-                <option value="crediario">Crediário (A Prazo / Fiado)</option>
-                <option value="misto">⚡ Dividir Pagamento (Misto)</option>
-              </select>
-            </div>
-
-            {formaPagamento === 'crediario' && (
-              <div className="form-group" style={{ flex: 1 }}>
-                <label>Entrada / Pago Agora (R$)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  min="0"
-                  max={totalComDesconto}
-                  placeholder="0,00" 
-                  value={valorEntrada} 
-                  onChange={(e) => setValorEntrada(e.target.value)} 
-                />
-              </div>
-            )}
-          </div>
-
-          {formaPagamento === 'misto' && (
-            <div className="misto-container">
-              <div className="misto-header">
-                <span className="misto-title">Composição do Pagamento Misto</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: restanteMisto > 0.01 ? '#dc2626' : '#16a34a' }}>
-                  {restanteMisto > 0.01 ? `Falta Cobrar: R$ ${restanteMisto.toFixed(2)}` : '✓ Totalmente Coberto!'}
-                </span>
-              </div>
-
-              {linhasMisto.map(linha => (
-                <div key={linha.id} className="misto-item">
-                  <span>Forma: <strong>{linha.tipo.toUpperCase()}</strong></span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <strong>R$ {Number(linha.valor).toFixed(2)}</strong>
-                    <button type="button" onClick={() => removerLinhaMisto(linha.id)} style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>
-                      <IconTrash />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {restanteMisto > 0.001 && (
-                <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                  <select 
-                    value={tipoMistoAdd} 
-                    onChange={e => setTipoMistoAdd(e.target.value)}
-                    style={{ height: '36px', padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem' }}
-                  >
-                    <option value="pix">PIX</option>
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="debito">Cartão de Débito</option>
-                    <option value="credito">Cartão de Crédito</option>
-                    <option value="crediario">Crediário (A Prazo)</option>
-                  </select>
-
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder={`Valor (máx R$ ${restanteMisto.toFixed(2)})`}
-                    value={valorMistoAdd}
-                    onChange={e => setValorMistoAdd(e.target.value)}
-                    style={{ height: '36px', padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem', width: '180px' }}
-                  />
-
-                  <button 
-                    type="button" 
-                    className="btn btn-sm btn-primary"
-                    onClick={adicionarLinhaMisto}
-                  >
-                    + Adicionar Parcela
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {saldoCashbackDisponivel > 0 && (
-            <div className="cashback-card-alert">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <IconSparkles />
-                <div>
-                  <strong style={{ color: '#854d0e', fontSize: '0.9rem' }}>
-                    {clienteAtual?.nome} tem R$ {saldoCashbackDisponivel.toFixed(2)} de saldo!
-                  </strong>
-                  <div style={{ fontSize: '0.78rem', color: '#a16207' }}>
-                    {usarCashback 
-                      ? `Abatendo R$ ${valorAbatidoCashback.toFixed(2)} (Limite anti-prejuízo: máx ${limiteAbatimentoCarrinho}% da compra)`
-                      : `Trava de margem: pode abater até R$ ${Math.min(saldoCashbackDisponivel, tetoPermitidoReais).toFixed(2)} nesta compra.`}
-                  </div>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                className={`btn btn-sm ${usarCashback ? 'btn-secondary' : 'btn-primary'}`} 
-                onClick={() => setUsarCashback(!usarCashback)}
-              >
-                {usarCashback ? '✕ Não usar agora' : '✨ Usar Bônus Permitido'}
-              </button>
-            </div>
-          )}
+        <div class="row total" style="margin-top: 4px;">
+          <span>TOTAL A PAGAR:</span>
+          <span>R$ ${Number(venda.total).toFixed(2)}</span>
         </div>
 
-        <div className="form-section">
-          <h2>Adicionar Produtos</h2>
-          <div className="form-row">
-            <div className="form-group" style={{ flex: 3 }} ref={dropdownRef}>
-              <label>Buscar Produto ou Variação (Nome ou Código de Barras)</label>
-              <input 
-                type="text" 
-                placeholder="Digite o nome, código da peça ou bipe no teclado..."
-                value={termoBuscaProduto}
-                onChange={e => { setTermoBuscaProduto(e.target.value); setMostrarDropdownBusca(true); }}
-                onFocus={() => setMostrarDropdownBusca(true)}
-                onKeyDown={handleKeyDownBusca}
-              />
-
-              {mostrarDropdownBusca && produtosFiltradosBusca.length > 0 && (
-                <div className="busca-dropdown">
-                  {produtosFiltradosBusca.map(prod => (
-                    <div 
-                      key={prod.id} 
-                      className="busca-item"
-                      onClick={() => selecionarProdutoBusca(prod)}
-                    >
-                      <div>
-                        <div className="busca-item-title">{prod.nome}</div>
-                        <div className="busca-item-sub">
-                          Estoque: {prod.estoque || 0} un {prod.codigo_barras ? `• Cód: ${prod.codigo_barras}` : ''}
-                        </div>
-                      </div>
-                      <strong style={{ color: '#2563eb' }}>R$ {Number(prod.preco).toFixed(2)}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <button 
-                type="button" 
-                className="btn btn-camera" 
-                onClick={abrirScannerCamera}
-                title="Bipar com a câmera do celular"
-              >
-                <IconCamera /> Bipar com Câmera
-              </button>
-            </div>
-
-            <div className="form-group" style={{ flex: 0.8 }}>
-              <label>Qtd</label>
-              <input 
-                type="number" 
-                min="1" 
-                value={quantidade} 
-                onChange={(e) => setQuantidade(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <button 
-            className="btn btn-primary" 
-            onClick={() => {
-              if (produtoSelecionadoObj) {
-                adicionarItemAoPedido(produtoSelecionadoObj, quantidade)
-              } else if (termoBuscaProduto) {
-                const exato = produtos.find(p => p.nome.toLowerCase() === termoBuscaProduto.toLowerCase() || (p.codigo_barras && p.codigo_barras === termoBuscaProduto))
-                if (exato) selecionarProdutoBusca(exato)
-              } else {
-                alert('Selecione um produto ou bipe o código.')
-              }
-            }} 
-            style={{ gap: '6px' }}
-          >
-            <IconPlus /> Adicionar ao Pedido
-          </button>
+        <div class="row" style="margin-top: 4px;">
+          <span>Pagamento:</span>
+          <span>${formaTxt}</span>
         </div>
-      </div>
 
-      {itensVenda.length > 0 && (
-        <div className="table-container">
-          <h2>Itens do Pedido</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Produto / Variação</th>
-                <th>Preço Unit.</th>
-                <th style={{ textAlign: 'center' }}>Quantidade</th>
-                <th style={{ textAlign: 'center' }}>Desconto (R$)</th>
-                <th>Subtotal</th>
-                <th style={{ textAlign: 'center' }}>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {itensVenda.map(item => (
-                <tr key={item.id}>
-                  <td><strong>{item.nomeProduto}</strong></td>
-                  <td>R$ {item.preco.toFixed(2)}</td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '8px' }}>
-                      <button style={{ border: 'none', background: '#fff', borderRadius: '4px', width: '24px', height: '24px', cursor: 'pointer' }} onClick={() => alterarQtdItem(item.id, -1)}><IconMinus /></button>
-                      <span style={{ fontWeight: 600 }}>{item.quantidade}</span>
-                      <button style={{ border: 'none', background: '#fff', borderRadius: '4px', width: '24px', height: '24px', cursor: 'pointer' }} onClick={() => alterarQtdItem(item.id, 1)}><IconPlus size={14} color="#475569" /></button>
-                    </div>
-                  </td>
-
-                  <td style={{ textAlign: 'center' }}>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      min="0" 
-                      max={item.quantidade * item.preco} 
-                      className="input-desc-item" 
-                      placeholder="0,00" 
-                      value={item.desconto} 
-                      onChange={(e) => alterarDescontoItem(item.id, e.target.value)} 
-                      title="Desconto específico nesta peça" 
-                    />
-                  </td>
-
-                  <td>
-                    <strong>R$ {item.subtotal.toFixed(2)}</strong>
-                    {Number(item.desconto) > 0 && (
-                      <span style={{ display: 'block', fontSize: '0.72rem', color: '#dc2626' }}>
-                        (-R$ {Number(item.desconto).toFixed(2)})
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <button className="btn btn-sm btn-danger" onClick={() => removerItem(item.id)}><IconTrash /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div style={{ marginTop: '1.5rem', background: '#f8fafc', padding: '1.25rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>
-                  DESCONTO GERAL (R$):
-                </label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  min="0" 
-                  value={descontoGlobal} 
-                  onChange={(e) => setDescontoGlobal(e.target.value)} 
-                  style={{ width: '120px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }} 
-                  placeholder="0,00" 
-                />
-              </div>
-
-              {totalDescontosIndividuais > 0 && (
-                <div style={{ background: '#fef2f2', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fecaca' }}>
-                  <span style={{ fontSize: '11px', color: '#991b1b', display: 'block', fontWeight: 600 }}>DESCONTO NOS ITENS:</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#dc2626' }}>- R$ {totalDescontosIndividuais.toFixed(2)}</strong>
-                </div>
-              )}
-
-              {usarCashback && (
-                <div style={{ background: '#fefce8', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fef08a' }}>
-                  <span style={{ fontSize: '11px', color: '#854d0e', display: 'block', fontWeight: 600 }}>BÔNUS ABATIDO:</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#a16207' }}>- R$ {valorAbatidoCashback.toFixed(2)}</strong>
-                </div>
-              )}
-
-              {clienteAtual && taxaCashback > 0 && (
-                <div style={{ background: '#f0fdf4', padding: '8px 14px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
-                  <span style={{ fontSize: '11px', color: '#15803d', display: 'block', fontWeight: 600 }}>
-                    NOVO BÔNUS ({taxaCashback}% - Validade {diasValidadeCashback}d):
-                  </span>
-                  <strong style={{ fontSize: '1.1rem', color: '#16a34a' }}>+ R$ {novoCashbackGerado.toFixed(2)}</strong>
-                </div>
-              )}
-
-              {formaPagamento === 'dinheiro' && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}>VALOR RECEBIDO (R$):</label>
-                  <input type="number" step="0.01" placeholder="0,00" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} style={{ width: '140px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                </div>
-              )}
-
-              {formaPagamento === 'dinheiro' && troco > 0 && (
-                <div style={{ background: '#ecfdf5', padding: '8px 16px', borderRadius: '10px', border: '1px solid #10b981' }}>
-                  <span style={{ fontSize: '11px', color: '#047857', display: 'block', fontWeight: 600 }}>TROCO A DEVOLVER:</span>
-                  <strong style={{ fontSize: '1.25rem', color: '#047857' }}>R$ {troco.toFixed(2)}</strong>
-                </div>
-              )}
-
-              {formaPagamento === 'crediario' && (
-                <div style={{ background: '#fffbeb', padding: '8px 16px', borderRadius: '10px', border: '1px solid #f59e0b' }}>
-                  <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 600 }}>RESTANTE A COBRAR:</span>
-                  <strong style={{ fontSize: '1.2rem', color: '#92400e' }}>R$ {saldoRestanteCrediario.toFixed(2)}</strong>
-                </div>
-              )}
-            </div>
-
-            <div className="total-section" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
-              <div>
-                <span style={{ fontSize: '1rem', color: '#64748b' }}>Total a Pagar: </span>
-                <span className="total-value">R$ {totalComDesconto.toFixed(2)}</span>
-              </div>
-              <button 
-                className="btn btn-success btn-lg" 
-                onClick={finalizarVenda} 
-                disabled={salvando || (formaPagamento === 'misto' && restanteMisto > 0.01)} 
-                style={{ gap: '8px' }}
-              >
-                <IconCheck /> {salvando ? 'Processando...' : 'Finalizar Venda'}
-              </button>
-            </div>
-          </div>
+        <div class="divider"></div>
+        <div class="text-center" style="font-size: 11px;">
+          ${empresa?.mensagemCupom || DADOS_EMPRESA.mensagemCupom}
         </div>
-      )}
 
-      {modalPendenciasAberto && (
-        <div className="modal-overlay" onClick={() => setModalPendenciasAberto(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a' }}>Dívidas de {clienteAtual?.nome}</h3>
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                  Total Pendente no Crediário: <strong style={{ color: '#dc2626' }}>R$ {totalPendenteCliente.toFixed(2)}</strong>
-                </span>
-              </div>
-              <button onClick={() => setModalPendenciasAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
-            </div>
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() { window.close(); };
+          };
+        </script>
+      </body>
+    </html>
+  `)
 
-            <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
-              {pendenciasCliente.map(c => {
-                const total = Number(c.valor || 0)
-                const pago = Number(c.valor_pago || 0)
-                const saldo = Math.max(0, total - pago)
-                const dVenc = c.vencimento ? new Date(c.vencimento + 'T00:00:00') : null
-                const vencida = dVenc && dVenc < hojeData
-
-                return (
-                  <div key={c.id} style={{
-                    background: vencida ? '#fff1f2' : '#f8fafc',
-                    border: `1px solid ${vencida ? '#fecdd3' : '#e2e8f0'}`,
-                    borderRadius: '10px',
-                    padding: '10px 14px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
-                    <div>
-                      <strong style={{ fontSize: '0.9rem', color: '#0f172a', display: 'block' }}>
-                        {c.descricao || `Conta #${c.id}`}
-                      </strong>
-                      <span style={{ fontSize: '0.78rem', color: vencida ? '#e11d48' : '#64748b', fontWeight: vencida ? 700 : 500 }}>
-                        {vencida ? '⚠️ Vencida em: ' : 'Vencimento: '}
-                        {dVenc ? dVenc.toLocaleDateString('pt-BR') : 'Sem data definida'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block' }}>Total R$ {total.toFixed(2)}</span>
-                        <strong style={{ fontSize: '1rem', color: vencida ? '#e11d48' : '#ea580c' }}>
-                          R$ {saldo.toFixed(2)}
-                        </strong>
-                      </div>
-
-                      {clienteAtual?.telefone && (
-                        <button
-                          type="button"
-                          onClick={() => enviarAvisoCobrancaZap(c)}
-                          style={{
-                            background: '#dcfce7',
-                            border: '1px solid #bbf7d0',
-                            borderRadius: '8px',
-                            color: '#15803d',
-                            padding: '6px 8px',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700
-                          }}
-                          title="Enviar lembrete amigável desta conta no WhatsApp"
-                        >
-                          <IconWhatsApp /> Zap
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary"
-                onClick={() => setModalPendenciasAberto(false)}
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalEscolhaVarAberto && prodParaEscolherVar && (
-        <div className="modal-overlay" onClick={() => setModalEscolhaVarAberto(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.15rem', color: '#0f172a' }}>Escolha o Tamanho / Cor</h3>
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{prodParaEscolherVar.nome}</span>
-              </div>
-              <button onClick={() => setModalEscolhaVarAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
-            </div>
-
-            <div className="var-grid">
-              {variacoes.filter(v => v.produto_id === prodParaEscolherVar.id).map(v => (
-                <button 
-                  key={v.id} 
-                  className="var-btn"
-                  onClick={() => {
-                    adicionarItemAoPedido(prodParaEscolherVar, quantidade, v)
-                    setModalEscolhaVarAberto(false)
-                  }}
-                >
-                  <strong>{v.tamanho || 'Único'}</strong>
-                  <span>{v.cor || 'Padrão'}</span>
-                  <div style={{ fontSize: '0.72rem', color: v.estoque > 0 ? '#16a34a' : '#dc2626', marginTop: '4px' }}>
-                    {v.estoque > 0 ? `${v.estoque} un disponíveis` : 'Sem estoque'}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setModalEscolhaVarAberto(false)}>Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalCameraAberto && (
-        <div className="modal-camera-overlay">
-          <div className="modal-camera-box">
-            <h3 style={{ marginBottom: '8px', color: '#0f172a' }}>📷 Aponte a Câmera para o Código</h3>
-            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '14px' }}>Posicione o código de barras no centro do quadrado</p>
-            <div id="reader-camera"></div>
-            <button className="btn btn-secondary" onClick={() => fecharScannerCamera()} style={{ marginTop: '1rem', width: '100%' }}>
-              ✕ Fechar Leitor
-            </button>
-          </div>
-        </div>
-      )}
-
-      {modalCaixaAberto && (
-        <div className="modal-backdrop" onClick={() => setModalCaixaAberto(false)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
-            <div className="modal-top">
-              <div>
-                <h3 className="modal-heading">Fechamento do Dia & Vendas Realizadas</h3>
-                <p className="modal-sub">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
-              </div>
-              <button onClick={() => setModalCaixaAberto(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}>✕</button>
-            </div>
-
-            {carregandoCaixa ? (
-              <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>Calculando vendas de hoje...</p>
-            ) : (
-              <>
-                <div className="kpi-row">
-                  <div className="kpi-mini">
-                    <span className="kpi-mini-title">Total Faturado Hoje</span>
-                    <span className="kpi-mini-val" style={{ color: '#2563eb' }}>R$ {resumoTotais.totalGeral.toFixed(2)}</span>
-                  </div>
-                  <div className="kpi-mini">
-                    <span className="kpi-mini-title">Vendas Concluídas</span>
-                    <span className="kpi-mini-val">{resumoTotais.qtdPedidos} pedidos</span>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <div className="caixa-item caixa-gaveta">
-                    <div>
-                      <strong style={{ color: '#047857', display: 'block' }}>💵 Dinheiro em Gaveta</strong>
-                      <span style={{ fontSize: '0.75rem', color: '#065f46' }}>Saldo físico em espécie</span>
-                    </div>
-                    <strong style={{ color: '#047857', fontSize: '1.1rem' }}>R$ {resumoTotais.dinheiro.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <span>⚡ PIX</span>
-                    <strong>R$ {resumoTotais.pix.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <span>💳 Cartão de Débito</span>
-                    <strong>R$ {resumoTotais.debito.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <span>💳 Cartão de Crédito</span>
-                    <strong>R$ {resumoTotais.credito.toFixed(2)}</strong>
-                  </div>
-                  <div className="caixa-item" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
-                    <div>
-                      <strong style={{ color: '#b45309', display: 'block' }}>📝 Crediário (A Prazo)</strong>
-                      <span style={{ fontSize: '0.75rem', color: '#92400e' }}>Lançado em Contas a Receber</span>
-                    </div>
-                    <strong style={{ color: '#b45309' }}>R$ {resumoTotais.crediario.toFixed(2)}</strong>
-                  </div>
-                </div>
-
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', margin: '1rem 0 0.5rem 0' }}>
-                  Vendas Registradas Hoje ({vendasDoDia.length})
-                </h4>
-
-                <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', marginBottom: '1.25rem' }}>
-                  {vendasDoDia.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', padding: '1.5rem' }}>Nenhuma venda registrada hoje.</p>
-                  ) : (
-                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr>
-                          <th>Hora</th>
-                          <th>Cliente</th>
-                          <th>Forma</th>
-                          <th style={{ textAlign: 'right' }}>Total</th>
-                          <th style={{ textAlign: 'center' }}>Ação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {vendasDoDia.map(v => (
-                          <tr key={v.id}>
-                            <td>{new Date(v.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td><strong>{v.clientes?.nome || 'Cliente Avulso'}</strong></td>
-                            <td><span style={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700 }}>{v.forma_pagamento}</span></td>
-                            <td style={{ textAlign: 'right', fontWeight: 800, color: '#2563eb' }}>R$ {Number(v.total).toFixed(2)}</td>
-                            <td style={{ textAlign: 'center' }}>
-                              <button
-                                type="button"
-                                onClick={() => estornarVenda(v)}
-                                disabled={estornandoVendaId === v.id}
-                                style={{
-                                  background: '#fee2e2',
-                                  color: '#dc2626',
-                                  border: '1px solid #fca5a5',
-                                  borderRadius: '6px',
-                                  padding: '4px 8px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer'
-                                }}
-                                title="Cancelar venda e devolver peças ao estoque"
-                              >
-                                {estornandoVendaId === v.id ? 'Estornando...' : 'Estornar'}
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
-                  <button className="btn btn-primary" onClick={() => setModalCaixaAberto(false)}>
-                    Fechar Conferência
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  janelaImpressao.document.close()
 }
