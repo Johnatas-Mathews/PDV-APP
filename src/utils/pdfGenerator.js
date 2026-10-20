@@ -1,359 +1,60 @@
-import { supabase } from '../supabase'
-
-export const DADOS_EMPRESA_PADRAO = {
-  nome: 'MINHA LOJA',
-  documento: '',
-  endereco: '',
-  cidadeUf: '',
-  telefone: '',
-  instagram: '',
-  mensagemCupom: 'Obrigado pela preferência! Volte sempre.'
-}
-
-export const DADOS_EMPRESA = DADOS_EMPRESA_PADRAO
-
-export const formatarIdVenda = (id) => {
-  return String(id || 0).padStart(5, '0')
-}
-
-export const obterDadosEmpresaAtualizados = async () => {
-  try {
-    const { data } = await supabase.from('configuracoes').select('*')
-    if (data && data.length > 0) {
-      const mapa = {}
-      data.forEach(item => { mapa[item.chave] = item.valor })
-
-      return {
-        nome: mapa['empresa_nome'] || DADOS_EMPRESA_PADRAO.nome,
-        documento: mapa['empresa_documento'] || '',
-        telefone: mapa['empresa_telefone'] || '',
-        endereco: mapa['empresa_endereco'] || '',
-        cidadeUf: mapa['empresa_cidade_uf'] || '',
-        instagram: mapa['empresa_instagram'] || '',
-        mensagemCupom: mapa['empresa_mensagem_cupom'] || DADOS_EMPRESA_PADRAO.mensagemCupom
-      }
-    }
-  } catch (err) {
-    console.error('Erro ao buscar dados da empresa:', err)
-  }
-  return DADOS_EMPRESA_PADRAO
-}
-
-// FORMATADOR DE FORMA DE PAGAMENTO (SUPORTA MISTO)
-const formatarTextoPagamento = (venda) => {
-  if (venda.forma_pagamento === 'misto' && Array.isArray(venda.pagamentos_detalhe) && venda.pagamentos_detalhe.length > 0) {
-    return venda.pagamentos_detalhe.map(p => `${p.tipo.toUpperCase()}: R$ ${Number(p.valor).toFixed(2)}`).join(' + ')
-  }
-  return (venda.forma_pagamento || 'dinheiro').toUpperCase()
-}
-
-// GERAÇÃO DO CUPOM DIGITAL PARA WHATSAPP
-export const gerarTextoCupomWhatsApp = (venda, dadosEmpresaCustom = null, novoCashback = 0) => {
-  const empresa = { ...DADOS_EMPRESA_PADRAO, ...(dadosEmpresaCustom || {}) }
+export const gerarTextoCupomWhatsApp = (venda, empresa, cashbackGerado = 0) => {
+  const nomeLoja = empresa?.nome || 'TECCO'
   const codVenda = formatarIdVenda(venda.id)
-  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
+  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const nomeCliente = venda.clientes?.nome || 'Cliente'
-  const itens = Array.isArray(venda.itens) ? venda.itens : []
 
-  const subtotalItens = itens.reduce((acc, item) => {
-    const qtd = Number(item.quantidade || 1)
-    const unit = Number(item.preco || 0)
-    return acc + (qtd * unit)
-  }, 0)
+  let listaItensTxt = ''
+  if (Array.isArray(venda.itens)) {
+    venda.itens.forEach(item => {
+      const qtd = Number(item.quantidade || 1)
+      const preco = Number(item.preco || 0)
+      const descItem = Number(item.desconto || 0)
+      const subtotal = Number(item.subtotal || (qtd * preco - descItem))
 
-  const totalCobrado = Number(venda.total || 0)
-  const valorDesconto = Math.max(0, subtotalItens - totalCobrado)
-
-  const textoItens = itens.map(item => {
-    const qtd = Number(item.quantidade || 1)
-    const unit = Number(item.preco || 0)
-    const totalItem = qtd * unit
-    const nomeProd = item.nomeProduto || item.nome || 'Produto'
-    return `• ${qtd}x ${nomeProd} - R$ ${totalItem.toFixed(2)}`
-  }).join('\n')
-
-  let blocoDesconto = ''
-  if (valorDesconto > 0.01) {
-    blocoDesconto = `\nDesconto Concedido: - R$ ${valorDesconto.toFixed(2)}`
+      listaItensTxt += `• ${qtd}x *${item.nomeProduto}*\n`
+      if (descItem > 0) {
+        listaItensTxt += `  De: R$ ${(qtd * preco).toFixed(2)} | Desc: -R$ ${descItem.toFixed(2)} ➔ *R$ ${subtotal.toFixed(2)}*\n`
+      } else {
+        listaItensTxt += `  Valor: R$ ${subtotal.toFixed(2)}\n`
+      }
+    })
   }
 
-  let blocoCashback = ''
-  if (novoCashback > 0) {
-    blocoCashback = `\n🎁 *Cashback Ganho Hoje:* R$ ${novoCashback.toFixed(2)}\nSaldo Total Disponível: R$ ${Number(venda.clientes?.saldo_cashback || 0).toFixed(2)}\n`
+  let formaTxt = String(venda.forma_pagamento || '').toUpperCase()
+  if (formaTxt === 'MISTO' && Array.isArray(venda.pagamentos_detalhe)) {
+    formaTxt = venda.pagamentos_detalhe.map(p => `${p.tipo.toUpperCase()} (R$ ${Number(p.valor).toFixed(2)})`).join(', ')
   }
 
-  const textoPagto = formatarTextoPagamento(venda)
+  let msg = `🛍️ *CUPOM FISCAL / COMPROVANTE DE VENDA*\n`
+  msg += `*${nomeLoja.toUpperCase()}*\n`
+  if (empresa?.documento) msg += `CNPJ/CPF: ${empresa.documento}\n`
+  if (empresa?.telefone) msg += `Telefone: ${empresa.telefone}\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `📄 *Pedido:* #${codVenda}\n`
+  msg += `📅 *Data:* ${dataVenda}\n`
+  msg += `👤 *Cliente:* ${nomeCliente}\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `*ITENS COMPRADOS:*\n\n`
+  msg += `${listaItensTxt}\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  
+  if (Number(venda.desconto_total_itens) > 0) {
+    msg += `🏷️ Desconto nos Itens: -R$ ${Number(venda.desconto_total_itens).toFixed(2)}\n`
+  }
+  if (Number(venda.desconto_global) > 0) {
+    msg += `🏷️ Desconto Geral: -R$ ${Number(venda.desconto_global).toFixed(2)}\n`
+  }
+  
+  msg += `💰 *TOTAL PAGO: R$ ${Number(venda.total).toFixed(2)}*\n`
+  msg += `💳 *Forma de Pagamento:* ${formaTxt}\n`
 
-  return (
-    `🧾 *${empresa.nome.toUpperCase()}*\n` +
-    (empresa.documento ? `${empresa.documento}\n` : '') +
-    (empresa.telefone ? `Tel/WhatsApp: ${empresa.telefone}\n` : '') +
-    `--------------------------------\n` +
-    `*COMPROVANTE DE COMPRA #${codVenda}*\n` +
-    `Data: ${dataVenda}\n` +
-    `Cliente: *${nomeCliente}*\n` +
-    `--------------------------------\n` +
-    `*ITENS DO PEDIDO:*\n` +
-    `${textoItens}\n` +
-    `--------------------------------\n` +
-    `Total Produtos: R$ ${subtotalItens.toFixed(2)}` +
-    blocoDesconto + '\n' +
-    `*TOTAL PAGO: R$ ${totalCobrado.toFixed(2)}*\n` +
-    `Pagamento: ${textoPagto}\n` +
-    blocoCashback +
-    `--------------------------------\n` +
-    `${empresa.mensagemCupom || 'Obrigado pela preferência! Volte sempre.'}`
-  )
-}
-
-// COMPROVANTE DE VENDA (IMPRESSÃO / PDF)
-export const gerarComprovanteVenda = async (venda, dadosEmpresaManual = null) => {
-  const empresa = dadosEmpresaManual || await obterDadosEmpresaAtualizados()
-  const dataVenda = new Date(venda.created_at || Date.now()).toLocaleString('pt-BR')
-  const codVenda = formatarIdVenda(venda.id)
-  const itens = Array.isArray(venda.itens) ? venda.itens : []
-
-  const subtotalItens = itens.reduce((acc, item) => {
-    const qtd = Number(item.quantidade || 1)
-    const unit = Number(item.preco || 0)
-    return acc + (qtd * unit)
-  }, 0)
-
-  const totalCobrado = Number(venda.total || 0)
-  const valorDesconto = Math.max(0, subtotalItens - totalCobrado)
-
-  const linhasItensHtml = itens.map(item => {
-    const qtd = Number(item.quantidade || 1)
-    const unit = Number(item.preco || 0)
-    const subt = qtd * unit
-    return `
-      <tr>
-        <td style="padding: 6px 0; border-bottom: 1px dashed #e2e8f0;">
-          <div style="font-weight: 600; color: #0f172a;">${item.nomeProduto || item.nome || 'Produto'}</div>
-          <div style="font-size: 11px; color: #64748b;">${qtd} un x R$ ${unit.toFixed(2)}</div>
-        </td>
-        <td style="padding: 6px 0; border-bottom: 1px dashed #e2e8f0; text-align: right; font-weight: 600; color: #0f172a; vertical-align: bottom;">
-          R$ ${subt.toFixed(2)}
-        </td>
-      </tr>
-    `
-  }).join('')
-
-  let linhasPagtoMistoHtml = ''
-  if (venda.forma_pagamento === 'misto' && Array.isArray(venda.pagamentos_detalhe)) {
-    linhasPagtoMistoHtml = venda.pagamentos_detalhe.map(p => `
-      <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 2px;">
-        <span>• ${p.tipo.toUpperCase()}:</span>
-        <strong>R$ ${Number(p.valor).toFixed(2)}</strong>
-      </div>
-    `).join('')
+  if (cashbackGerado > 0) {
+    msg += `\n✨ *Parabéns!* Você ganhou *R$ ${cashbackGerado.toFixed(2)}* de Cashback para a sua próxima compra!\n`
   }
 
-  const blocoTotaisHtml = `
-    <div style="margin-top: 14px; border-top: 1px solid #0f172a; padding-top: 8px;">
-      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #475569;">
-        <span>Total Produtos:</span>
-        <strong>R$ ${subtotalItens.toFixed(2)}</strong>
-      </div>
+  msg += `━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `Muito obrigado pela sua preferência! Volte sempre! ✨`
 
-      ${valorDesconto > 0.01 ? `
-      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #dc2626;">
-        <span>Desconto Concedido:</span>
-        <strong>- R$ ${valorDesconto.toFixed(2)}</strong>
-      </div>
-      ` : ''}
-
-      <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">
-        <span>TOTAL FINAL:</span>
-        <span>R$ ${totalCobrado.toFixed(2)}</span>
-      </div>
-
-      ${linhasPagtoMistoHtml ? `
-      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">
-        <span style="font-size: 11px; font-weight: 700; color: #334155;">Detalhamento do Pagamento:</span>
-        ${linhasPagtoMistoHtml}
-      </div>
-      ` : ''}
-    </div>
-  `
-
-  const enderecoCompleto = [empresa.endereco, empresa.cidadeUf].filter(Boolean).join(' - ')
-
-  const htmlConteudo = `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-      <head>
-        <meta charset="utf-8">
-        <title>Comprovante #${codVenda}</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; }
-          body { background: #ffffff; padding: 20px; color: #0f172a; }
-          .cupom { width: 100%; max-width: 320px; margin: 0 auto; }
-          .header { text-align: center; border-bottom: 1px dashed #94a3b8; padding-bottom: 12px; margin-bottom: 12px; }
-          .title { font-size: 16px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
-          .sub { font-size: 11px; color: #64748b; margin-top: 3px; }
-          .meta { font-size: 11px; color: #334155; margin-bottom: 12px; }
-          .meta div { margin-bottom: 2px; }
-          table { width: 100%; border-collapse: collapse; }
-          .footer { text-align: center; font-size: 11px; color: #64748b; border-top: 1px dashed #94a3b8; margin-top: 16px; padding-top: 12px; }
-          @media print {
-            body { padding: 0; }
-            .cupom { max-width: 100%; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="cupom">
-          <div class="header">
-            <div class="title">${empresa.nome}</div>
-            ${empresa.documento ? `<div class="sub">${empresa.documento}</div>` : ''}
-            ${enderecoCompleto ? `<div class="sub">${enderecoCompleto}</div>` : ''}
-            ${empresa.telefone ? `<div class="sub">Tel/WhatsApp: ${empresa.telefone}</div>` : ''}
-            ${empresa.instagram ? `<div class="sub">Instagram: ${empresa.instagram}</div>` : ''}
-          </div>
-
-          <div class="meta">
-            <div><strong>PEDIDO: #${codVenda}</strong></div>
-            <div>Data: ${dataVenda}</div>
-            <div>Cliente: ${venda.clientes?.nome || 'Cliente Avulso'}</div>
-            <div>Forma Pagto: ${venda.forma_pagamento === 'misto' ? 'PAGAMENTO MISTO' : (venda.forma_pagamento || 'dinheiro').toUpperCase()}</div>
-          </div>
-
-          <table>
-            ${linhasItensHtml}
-          </table>
-
-          ${blocoTotaisHtml}
-
-          <div class="footer">
-            <p>${empresa.mensagemCupom || 'Obrigado pela preferência!'}</p>
-            <p style="margin-top: 4px; font-size: 10px;">Conserve este comprovante</p>
-          </div>
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-          };
-        </script>
-      </body>
-    </html>
-  `
-
-  const blob = new Blob([htmlConteudo], { type: 'text/html;charset=utf-8' })
-  const urlBlob = URL.createObjectURL(blob)
-  const novaAba = window.open(urlBlob, '_blank')
-  if (!novaAba) {
-    alert('Por favor, permita pop-ups no seu navegador para abrir o comprovante em nova aba.')
-  }
-}
-
-// COMPROVANTE DE CONDICIONAL
-export const gerarComprovanteCondicional = async (condicional, dadosEmpresaManual = null) => {
-  const empresa = dadosEmpresaManual || await obterDadosEmpresaAtualizados()
-  const codCond = formatarIdVenda(condicional.id)
-  const itens = Array.isArray(condicional.itens) ? condicional.itens : []
-  const dataRet = condicional.data_retirada ? new Date(`${condicional.data_retirada}T12:00:00`).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')
-  const dataDev = condicional.data_devolucao_prevista ? new Date(`${condicional.data_devolucao_prevista}T12:00:00`).toLocaleDateString('pt-BR') : 'Não estipulada'
-
-  const totalValor = itens.reduce((s, i) => s + (Number(i.quantidade || 1) * Number(i.preco || 0)), 0)
-  const totalPecas = itens.reduce((s, i) => s + Number(i.quantidade || 1), 0)
-
-  const linhasItensHtml = itens.map(item => {
-    const qtd = Number(item.quantidade || 1)
-    const unit = Number(item.preco || 0)
-    const subt = qtd * unit
-    return `
-      <tr>
-        <td style="padding: 6px 0; border-bottom: 1px dashed #e2e8f0;">
-          <div style="font-weight: 600; color: #0f172a;">${item.nomeProduto || item.nome}</div>
-          <div style="font-size: 11px; color: #64748b;">${qtd} un x R$ ${unit.toFixed(2)}</div>
-        </td>
-        <td style="padding: 6px 0; border-bottom: 1px dashed #e2e8f0; text-align: right; font-weight: 600; color: #0f172a; vertical-align: bottom;">
-          R$ ${subt.toFixed(2)}
-        </td>
-      </tr>
-    `
-  }).join('')
-
-  const enderecoCompleto = [empresa.endereco, empresa.cidadeUf].filter(Boolean).join(' - ')
-
-  const htmlConteudo = `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-      <head>
-        <meta charset="utf-8">
-        <title>Condicional #${codCond}</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; }
-          body { background: #ffffff; padding: 20px; color: #0f172a; }
-          .cupom { width: 100%; max-width: 320px; margin: 0 auto; }
-          .header { text-align: center; border-bottom: 1px dashed #94a3b8; padding-bottom: 12px; margin-bottom: 12px; }
-          .title { font-size: 16px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
-          .badge-cond { display: inline-block; background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 4px; text-transform: uppercase; }
-          .sub { font-size: 11px; color: #64748b; margin-top: 3px; }
-          .meta { font-size: 11px; color: #334155; margin-bottom: 12px; }
-          .meta div { margin-bottom: 2px; }
-          table { width: 100%; border-collapse: collapse; }
-          .termo { font-size: 10px; color: #475569; text-align: justify; border: 1px solid #e2e8f0; padding: 8px; border-radius: 6px; background: #f8fafc; margin-top: 14px; line-height: 1.35; }
-          .assinatura { margin-top: 35px; border-top: 1px solid #0f172a; text-align: center; padding-top: 6px; font-size: 11px; font-weight: 600; color: #0f172a; }
-          .footer { text-align: center; font-size: 10px; color: #64748b; margin-top: 16px; }
-          @media print {
-            body { padding: 0; }
-            .cupom { max-width: 100%; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="cupom">
-          <div class="header">
-            <div class="title">${empresa.nome}</div>
-            <span class="badge-cond">Retirada em Condicional</span>
-            ${enderecoCompleto ? `<div class="sub">${enderecoCompleto}</div>` : ''}
-            ${empresa.telefone ? `<div class="sub">WhatsApp: ${empresa.telefone}</div>` : ''}
-          </div>
-
-          <div class="meta">
-            <div><strong>CONDICIONAL: #${codCond}</strong></div>
-            <div>Cliente: <strong>${condicional.clientes?.nome || 'Não identificado'}</strong></div>
-            ${condicional.clientes?.telefone ? `<div>WhatsApp: ${condicional.clientes.telefone}</div>` : ''}
-            <div>Data Retirada: ${dataRet}</div>
-            <div style="color: #b45309; font-weight: 700;">Devolução Prevista: ${dataDev}</div>
-          </div>
-
-          <table>
-            ${linhasItensHtml}
-          </table>
-
-          <div style="margin-top: 12px; border-top: 1px solid #0f172a; padding-top: 8px; display: flex; justify-content: space-between; font-size: 13px; font-weight: 700;">
-            <span>Total (${totalPecas} peças):</span>
-            <span>R$ ${totalValor.toFixed(2)}</span>
-          </div>
-
-          <div class="termo">
-            Declaro que recebi as mercadorias descritas acima sob condição de prova/avaliação, comprometendo-me a devolver no prazo acordado as peças que não adquirir, em perfeitas condições de uso, ou efetuar o pagamento do valor correspondente.
-          </div>
-
-          <div class="assinatura">
-            Assinatura do Cliente
-          </div>
-
-          <div class="footer">
-            Conserve este comprovante até o acerto final
-          </div>
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-          };
-        </script>
-      </body>
-    </html>
-  `
-
-  const blob = new Blob([htmlConteudo], { type: 'text/html;charset=utf-8' })
-  const urlBlob = URL.createObjectURL(blob)
-  const novaAba = window.open(urlBlob, '_blank')
-  if (!novaAba) {
-    alert('Por favor, permita pop-ups no seu navegador para abrir o comprovante em nova aba.')
-  }
+  return msg
 }
