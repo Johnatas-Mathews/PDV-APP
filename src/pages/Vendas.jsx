@@ -446,8 +446,8 @@ export default function Vendas() {
     return dVenc < hojeData
   })
 
+  // CÁLCULOS TOTAIS
   const subtotalItens = itensVenda.reduce((sum, item) => sum + item.subtotal, 0)
-  const totalDescontosIndividuais = itensVenda.reduce((sum, item) => sum + (Number(item.desconto) || 0), 0)
 
   const descontoGlobalManual = parseFloat(descontoGlobal) || 0
   const valorPosDesconto = Math.max(0, subtotalItens - descontoGlobalManual)
@@ -657,6 +657,8 @@ export default function Vendas() {
     const telefoneCliente = clienteAtual ? clienteAtual.telefone : null
 
     try {
+      // Grava apenas as colunas existentes na tabela 'vendas'
+      // O desconto de cada peça fica armazenado com segurança no JSON de 'itens'
       const payloadVenda = {
         total: totalComDesconto,
         forma_pagamento: formaPagamento,
@@ -664,8 +666,6 @@ export default function Vendas() {
           ...i,
           desconto: Number(i.desconto) || 0
         })),
-        desconto_global: descontoGlobalManual,
-        desconto_total_itens: totalDescontosIndividuais,
         cliente_id: clienteId,
         pagamentos_detalhe: formaPagamento === 'misto' ? linhasMisto : [],
         created_at: new Date().toISOString()
@@ -1312,13 +1312,6 @@ export default function Vendas() {
                   placeholder="0,00" 
                 />
               </div>
-
-              {totalDescontosIndividuais > 0 && (
-                <div style={{ background: '#fef2f2', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fecaca' }}>
-                  <span style={{ fontSize: '11px', color: '#991b1b', display: 'block', fontWeight: 600 }}>DESCONTO NOS ITENS:</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#dc2626' }}>- R$ {totalDescontosIndividuais.toFixed(2)}</strong>
-                </div>
-              )}
 
               {usarCashback && (
                 <div style={{ background: '#fefce8', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fef08a' }}>
